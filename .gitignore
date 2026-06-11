@@ -1,0 +1,31 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.pytest_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+
+# Virtual env
+.venv/
+venv/
+
+# Locus runtime data (warehouses, source copies, clones, sandboxes)
+/data/
+*.duckdb
+*.duckdb.wal
+*.contract.json
+*.audit.json
+
+# Node / frontend (Phase 6)
+node_modules/
+frontend/dist/
+
+# Tauri / packaging (Phase 7)
+src-tauri/target/
+packaging/build/
+packaging/dist/
+
+# OS
+.DS_Store
