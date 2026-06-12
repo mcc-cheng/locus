@@ -16,7 +16,7 @@ from .models import (
     SectionManifest,
     TableInfo,
 )
-from .clone import Clone, CloneManager
+from .clone import Clone, CloneManager, cow_copy_database
 from .preservation import sha256_file
 from .readonly import CanonicalDB
 from .warehouse import Warehouse
@@ -39,4 +39,5 @@ __all__ = [
     "CanonicalDB",
     "Clone",
     "CloneManager",
+    "cow_copy_database",
 ]

@@ -8,6 +8,9 @@ session-scoped and discarded on session end.
 
 from __future__ import annotations
 
+import shutil
+import subprocess
+import sys
 import uuid
 from pathlib import Path
 
@@ -22,6 +25,24 @@ DEFAULT_ALIAS = "canonical"
 def _sql_str(value: str) -> str:
     """Escape a value for a single-quoted DuckDB string literal."""
     return value.replace("'", "''")
+
+
+def cow_copy_database(src: Path, dst: Path) -> None:
+    """Copy a DuckDB file, preferring a copy-on-write clone when the filesystem
+    supports it (APFS ``clonefile`` via ``cp -c`` on macOS), else a plain copy.
+
+    The result is a fully independent database file — no handle on ``src`` is held
+    — so the canonical can still be opened read-write while copies exist.
+    """
+    if sys.platform == "darwin":
+        try:
+            subprocess.run(
+                ["cp", "-c", str(src), str(dst)], check=True, capture_output=True
+            )
+            return
+        except (subprocess.CalledProcessError, OSError):
+            pass  # fall back to a regular copy
+    shutil.copyfile(src, dst)
 
 
 class Clone:

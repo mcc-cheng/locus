@@ -16,10 +16,11 @@ from typing import Iterator
 
 import duckdb
 
+from . import introspect
 from .checkpoints import quote_ident, run_landing_checkpoint
 from .csv_source import CsvReadOptions, read_source
 from .errors import CheckpointError, SectionNotFoundError, SourceIntegrityError
-from .models import CheckResult, ColumnInfo, SectionManifest, TableInfo
+from .models import CheckResult, SectionManifest
 from .naming import derive_section_name
 from .preservation import (
     discard_staged_source,
@@ -218,62 +219,16 @@ class Warehouse:
             discard_staged_source(self.source_dir, section)
             raise
 
-    # ---- introspection ---------------------------------------------------
+    # ---- introspection (delegates to the shared read-only module) --------
 
     def _section_names(self) -> list[str]:
-        rows = self.con.execute(
-            f"SELECT name FROM {quote_ident(META_SCHEMA)}.sections ORDER BY name"
-        ).fetchall()
-        return [r[0] for r in rows]
+        return introspect.section_names(self.con)
 
     def list_sections(self) -> list[SectionManifest]:
-        return [self.get_section(n) for n in self._section_names()]
+        return introspect.all_section_manifests(self.con)
 
     def get_section(self, name: str) -> SectionManifest:
-        row = self.con.execute(
-            f"SELECT name, source_filename, upload_timestamp, sha256 "
-            f"FROM {quote_ident(META_SCHEMA)}.sections WHERE name = ?",
-            [name],
-        ).fetchone()
-        if row is None:
-            raise SectionNotFoundError(f"no section named {name!r}")
-        return SectionManifest(
-            name=row[0],
-            source_filename=row[1],
-            upload_timestamp=datetime.fromisoformat(row[2]),
-            sha256=row[3],
-            tables=self._tables_for(name),
-        )
-
-    def _tables_for(self, section: str) -> tuple[TableInfo, ...]:
-        table_rows = self.con.execute(
-            """
-            SELECT table_name FROM information_schema.tables
-            WHERE table_schema = ? ORDER BY table_name
-            """,
-            [section],
-        ).fetchall()
-        tables: list[TableInfo] = []
-        for (tname,) in table_rows:
-            col_rows = self.con.execute(
-                """
-                SELECT column_name, ordinal_position, data_type
-                FROM information_schema.columns
-                WHERE table_schema = ? AND table_name = ?
-                ORDER BY ordinal_position
-                """,
-                [section, tname],
-            ).fetchall()
-            columns = tuple(
-                # ordinal_position is 1-based in information_schema; expose 0-based.
-                ColumnInfo(name=c[0], ordinal=c[1] - 1, stored_type=c[2])
-                for c in col_rows
-            )
-            n = self.con.execute(
-                f"SELECT COUNT(*) FROM {quote_ident(section)}.{quote_ident(tname)}"
-            ).fetchone()[0]
-            tables.append(TableInfo(name=tname, row_count=n, columns=columns))
-        return tuple(tables)
+        return introspect.section_manifest(self.con, name)
 
     def drop_section(self, name: str) -> None:
         """Drop exactly one section. Other sections are untouched."""
