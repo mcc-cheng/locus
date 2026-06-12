@@ -1,50 +1,50 @@
-# Phase 5 — Analyst Agent
+# Phase 5 — Analyst Agent (multi-step, tool-using)
 
-**Status:** implemented
-**Modules:** `src/agentic/{actions,stats,brain,analyst}.py`, `/agent/chat` in `api/rest/app.py`
+**Status:** implemented (redesigned from one-shot to a multi-step ReAct loop)
+**Modules:** `src/agentic/{steps,brain,analyst,stats}.py`, `/agent/chat` in `api/rest/app.py`
 
-A chat agent with **read-only** access to the warehouse. It never writes to the
-canonical DB or any non-sandbox resource.
+A chat agent with **read-only** access that genuinely understands the data: it
+explores with tools, observes results, iterates, and writes a fluent, **streamed**
+answer grounded in what it found. It never writes to the canonical DB.
 
-## 5.1 Agent core (`analyst.py`)
+## The loop (`analyst.py`)
 
-Each turn: build a compact schema context (sections → tables → columns), ask the
-**brain** (local Ollama, `qwen2.5:7b-instruct`) for one action, then **the loop
-validates and executes** — the model never executes anything. The agent always
-returns the natural-language response, the SQL or chart spec it used, and the
-result.
+Each turn runs a short ReAct loop on a local Ollama model (`qwen2.5:7b-instruct`):
 
-Execution paths are all non-writing:
-- **query** → read-only `QueryService` (SELECT-only, clone, timeout).
-- **chart** → `VisualizationService` (server-aggregated, ≤10k rows). The agent
-  picks type + columns; it can never embed full-table data in a spec.
-- **stat_test** → a *templated* script (we build the code; the model only picks a
-  test name + columns) run in a **sandbox** clone.
-- **narrative** → no data access.
+1. Build a **rich data context** — every dataset's tables, columns, row counts,
+   and a few sample rows of `raw` — so the model "sees" the data.
+2. Up to `MAX_STEPS` tool steps: the model proposes one step, the loop validates
+   and executes it, and the **observation is fed back** so the model can correct
+   itself (it routinely recovers from its own bad SQL).
+3. **Answer phase:** a free-form chat call streams the final answer token by
+   token, grounded only in the observations gathered.
 
-Service errors are returned in the response (`error` field), not raised — the
-chat keeps going.
+## Tools — strict, validated (`steps.py`)
 
-## 5.2 Action union (`actions.py`)
+The model proposes one step per turn as JSON validated against a discriminated
+union (`StepDecision`); the loop executes it — the model never runs anything:
 
-Exactly four shapes, as a strict Pydantic **discriminated union** (`extra=forbid`,
-frozen): `QueryAction` (SQL SELECT), `ChartAction` (chart type + columns),
-`StatTestAction` (named test + columns + `sandbox_id`), `NarrativeAction` (text).
-Anything else — unknown `type`, extra/missing fields — raises `ValidationError`
-and is rejected **before execution**. Allowed tests: `ttest_ind`, `ttest_rel`,
-`mannwhitneyu`, `pearsonr`, `spearmanr`, `f_oneway`.
+- **run_sql** → read-only `QueryService` (SELECT-only, clone, timeout).
+- **make_chart** → `VisualizationService` (server-aggregated, ≤10k rows).
+- **run_stat** → a *templated* script (model picks test + columns only) in a
+  **disposable sandbox**.
+- **answer** → stop exploring and write the answer.
 
-## 5.3 `/agent/chat` (`api/rest/app.py`)
+Because every tool call is validated and runs through the read-only services or a
+sandbox, the agent can never modify data — verified by tests (a "run_sql" that is
+really DML is rejected; the canonical's bytes are unchanged).
 
-`POST /agent/chat` with `{message, history}`. The **full conversation history is
-passed each request — no server-side session state**. Returns a **streaming**
-NDJSON response with staged events: `action` (action_type + sql/spec), `result`,
-then `message`. Availability failures stream an `error` event. The brain is
-injectable (`create_app(root, brain_factory=...)`) for testing.
+## `/agent/chat` (streaming)
 
-## Guarantees under test
+`POST /agent/chat` with `{message, history}` (full history each request — no
+server session). Streams NDJSON events: `step` (tool + thought + sql + summary),
+`chart` (spec + chart_request), `token` (answer deltas), `final` (full answer),
+and `error`. The UI renders a live "thinking" trace, the streaming answer, and any
+charts (with **Open in Visualize**).
 
-- The agent never writes the canonical DB: a "query" that is really DDL/DML is
-  rejected by the query service; the canonical's bytes are unchanged.
-- Malformed/illegal actions are rejected by the union before execution.
-- Real Ollama produces a valid one-of-four action (test skips if unavailable).
+## Brain (`brain.py`)
+
+`OllamaBrain` exposes `decide_step` (structured, schema-constrained) and
+`stream_answer` (free-form, streamed), plus availability gating. Injectable
+(`create_app(root, brain_factory=...)`) so the whole loop is tested with a fake
+brain; one real-Ollama test asserts a grounded answer.

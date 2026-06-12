@@ -1,24 +1,29 @@
-"""The agent's decision backend (Phase 5.1).
+"""The agent's Ollama backend.
 
-A ``Brain`` turns a system+user prompt into a validated ``AgentDecision``. The
-Ollama-backed implementation runs locally; tests inject fakes. The loop (the
-analyst) validates and executes — the brain only proposes.
+Two capabilities:
+  * ``decide_step`` — structured: returns a validated ``StepDecision`` (the model
+    proposes a tool; the loop validates and executes).
+  * ``stream_answer`` — free-form: streams the final natural-language answer token
+    by token, grounded in the observations the loop gathered.
+
+Tests inject fakes implementing the ``Brain`` protocol.
 """
 
 from __future__ import annotations
 
+from collections.abc import Iterator
 from typing import Protocol
 
 import ollama
 
 from ingest.errors import OllamaUnavailableError
 
-from .actions import AgentDecision
+from .steps import StepDecision
 
 DEFAULT_MODEL = "qwen2.5:7b-instruct"
 
 _SERVER_DOWN = """\
-The analyst agent needs a local Ollama server, but none is reachable.
+The analyst needs a local Ollama server, but none is reachable.
   1. Install Ollama:  https://ollama.com/download
   2. Start it:        run `ollama serve` (or launch the Ollama app)
   3. Pull the model:  `ollama pull {model}`
@@ -31,7 +36,9 @@ class AgentError(Exception):
 
 
 class Brain(Protocol):
-    def decide(self, system: str, user: str) -> AgentDecision: ...
+    def ensure_available(self) -> None: ...
+    def decide_step(self, system: str, messages: list[dict]) -> StepDecision: ...
+    def stream_answer(self, system: str, messages: list[dict]) -> Iterator[str]: ...
 
 
 def _normalize(name: str) -> str:
@@ -45,7 +52,7 @@ class OllamaBrain:
         *,
         host: str | None = None,
         client=None,
-        temperature: float = 0.0,
+        temperature: float = 0.1,
         num_retries: int = 3,
     ) -> None:
         self.model = model
@@ -62,19 +69,17 @@ class OllamaBrain:
         if _normalize(self.model) not in installed:
             raise OllamaUnavailableError(_MODEL_MISSING.format(model=self.model))
 
-    def decide(self, system: str, user: str) -> AgentDecision:
+    def decide_step(self, system: str, messages: list[dict]) -> StepDecision:
         self.ensure_available()
-        schema = AgentDecision.model_json_schema()
+        schema = StepDecision.model_json_schema()
+        convo = [{"role": "system", "content": system}, *messages]
         last_parse: Exception | None = None
         last_transport: Exception | None = None
         for _ in range(max(1, self.num_retries)):
             try:
                 resp = self._client.chat(
                     model=self.model,
-                    messages=[
-                        {"role": "system", "content": system},
-                        {"role": "user", "content": user},
-                    ],
+                    messages=convo,
                     format=schema,
                     options={"temperature": self.temperature},
                 )
@@ -82,10 +87,23 @@ class OllamaBrain:
                 last_transport = exc
                 continue
             try:
-                return AgentDecision.model_validate_json(resp.message.content or "{}")
+                return StepDecision.model_validate_json(resp.message.content or "{}")
             except Exception as exc:
                 last_parse = exc
                 continue
         if last_transport is not None and last_parse is None:
             raise OllamaUnavailableError(_SERVER_DOWN.format(model=self.model))
-        raise AgentError(f"model did not produce a valid action after retries: {last_parse}")
+        raise AgentError(f"model did not return a valid step after retries: {last_parse}")
+
+    def stream_answer(self, system: str, messages: list[dict]) -> Iterator[str]:
+        self.ensure_available()
+        convo = [{"role": "system", "content": system}, *messages]
+        for chunk in self._client.chat(
+            model=self.model,
+            messages=convo,
+            stream=True,
+            options={"temperature": self.temperature},
+        ):
+            piece = chunk.message.content
+            if piece:
+                yield piece

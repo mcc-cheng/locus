@@ -1,27 +1,26 @@
-"""Locus analyst agent (Phase 5): read-only chat over the warehouse."""
+"""Locus analyst agent: a multi-step, tool-using LLM over the warehouse."""
 
-from .actions import (
-    AgentAction,
-    AgentDecision,
-    AgentResponse,
-    ChartAction,
-    NarrativeAction,
-    QueryAction,
-    StatTestAction,
-)
-from .analyst import AnalystAgent
+from .analyst import AgentTurn, AnalystAgent
 from .brain import AgentError, Brain, OllamaBrain
+from .steps import (
+    AgentStep,
+    Answer,
+    MakeChart,
+    RunSql,
+    RunStat,
+    StepDecision,
+)
 
 __all__ = [
     "AnalystAgent",
+    "AgentTurn",
     "OllamaBrain",
     "Brain",
     "AgentError",
-    "AgentDecision",
-    "AgentAction",
-    "AgentResponse",
-    "QueryAction",
-    "ChartAction",
-    "StatTestAction",
-    "NarrativeAction",
+    "StepDecision",
+    "AgentStep",
+    "RunSql",
+    "MakeChart",
+    "RunStat",
+    "Answer",
 ]

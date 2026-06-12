@@ -5,22 +5,38 @@ import { useApp } from "../store";
 import { VegaChart } from "../components/VegaChart";
 import { ChevronRight, SendIcon, SparkleIcon } from "../components/icons";
 
+interface Step {
+  tool: string;
+  thought?: string;
+  sql?: string;
+  summary?: string;
+}
+interface Chart {
+  spec: Record<string, unknown>;
+  chartRequest: ChartRequest | null;
+}
 interface AssistantMsg {
   role: "assistant";
+  steps: Step[];
+  charts: Chart[];
   text: string;
-  actionType?: string;
-  sql?: string | null;
-  spec?: Record<string, unknown> | null;
-  chartRequest?: ChartRequest | null;
   error?: string | null;
+  done?: boolean;
 }
 type Msg = { role: "user"; text: string } | AssistantMsg;
 
 const SUGGESTIONS = [
-  "How many rows are in each dataset?",
-  "Plot a histogram of the numeric columns.",
-  "Which categories are most common?",
+  "Summarize what's in my data.",
+  "How many rows are in each category?",
+  "Plot a histogram of a numeric column.",
+  "Are the groups significantly different?",
 ];
+
+const TOOL_LABEL: Record<string, string> = {
+  run_sql: "Queried the data",
+  make_chart: "Built a chart",
+  run_stat: "Ran a statistical test",
+};
 
 export function ChatPanel({ onCollapse }: { onCollapse: () => void }) {
   const { openInVisualize } = useApp();
@@ -35,40 +51,49 @@ export function ChatPanel({ onCollapse }: { onCollapse: () => void }) {
     );
   }
 
+  function patchLast(fn: (m: AssistantMsg) => void) {
+    setMessages((msgs) => {
+      const copy = [...msgs];
+      fn(copy[copy.length - 1] as AssistantMsg);
+      return copy;
+    });
+  }
+
   async function send(text: string) {
     text = text.trim();
     if (!text || streaming) return;
-    const history: ChatTurn[] = messages.map((m) => ({ role: m.role, content: m.text }));
-    setMessages((m) => [...m, { role: "user", text }, { role: "assistant", text: "" }]);
+    const history: ChatTurn[] = messages
+      .filter((m) => (m.role === "assistant" ? m.text : true))
+      .map((m) => ({ role: m.role, content: m.role === "assistant" ? m.text : m.text }));
+    setMessages((m) => [
+      ...m,
+      { role: "user", text },
+      { role: "assistant", steps: [], charts: [], text: "" },
+    ]);
     setInput("");
     setStreaming(true);
     scrollDown();
     try {
       await api.agentChat(text, history, (e) => {
-        setMessages((msgs) => {
-          const copy = [...msgs];
-          const last = copy[copy.length - 1] as AssistantMsg;
-          if (e.type === "action") {
-            last.actionType = e.action_type;
-            last.sql = e.sql;
-            last.spec = e.spec;
-            last.chartRequest = e.chart_request;
-          } else if (e.type === "message") {
-            last.text = e.response;
-            last.error = e.error;
+        patchLast((last) => {
+          if (e.type === "step") last.steps.push({ tool: e.tool, thought: e.thought, sql: e.sql, summary: e.summary });
+          else if (e.type === "chart") last.charts.push({ spec: e.spec, chartRequest: e.chart_request });
+          else if (e.type === "token") last.text += e.text;
+          else if (e.type === "final") {
+            if (e.response) last.text = e.response;
+            last.done = true;
           } else if (e.type === "error") {
-            last.text = "⚠️ " + e.error;
+            last.text = last.text || e.error;
             last.error = e.error;
+            last.done = true;
           }
-          return copy;
         });
         scrollDown();
       });
     } catch (err) {
-      setMessages((msgs) => {
-        const copy = [...msgs];
-        (copy[copy.length - 1] as AssistantMsg).text = "⚠️ " + String((err as Error).message);
-        return copy;
+      patchLast((last) => {
+        last.text = "⚠️ " + String((err as Error).message);
+        last.error = String((err as Error).message);
       });
     } finally {
       setStreaming(false);
@@ -85,7 +110,7 @@ export function ChatPanel({ onCollapse }: { onCollapse: () => void }) {
           </span>
           <div>
             <div className="text-sm font-semibold text-slate-800">Analyst</div>
-            <div className="text-[11px] text-slate-400">read-only · runs locally</div>
+            <div className="text-[11px] text-slate-400">explores your data · runs locally</div>
           </div>
         </div>
         <button
@@ -99,10 +124,10 @@ export function ChatPanel({ onCollapse }: { onCollapse: () => void }) {
 
       <div ref={scrollRef} className="flex-1 space-y-3 overflow-auto px-4 py-4">
         {messages.length === 0 && (
-          <div className="pt-6">
+          <div className="pt-4">
             <p className="text-sm text-slate-500">
-              Ask anything about your data. I can query it, build charts, and run
-              statistics — and I never change your originals.
+              I read your data, run queries and stats, and build charts to answer your
+              questions — and I never change your originals.
             </p>
             <div className="mt-4 space-y-2">
               {SUGGESTIONS.map((s) => (
@@ -125,15 +150,8 @@ export function ChatPanel({ onCollapse }: { onCollapse: () => void }) {
               </div>
             </div>
           ) : (
-            <AssistantBubble key={i} msg={m} onOpenChart={openInVisualize} />
+            <AssistantBubble key={i} msg={m} streaming={streaming} onOpenChart={openInVisualize} />
           ),
-        )}
-        {streaming && (
-          <div className="flex items-center gap-1.5 px-1 text-xs text-slate-400">
-            <span className="h-1.5 w-1.5 animate-bounce rounded-full bg-slate-300 [animation-delay:-0.2s]" />
-            <span className="h-1.5 w-1.5 animate-bounce rounded-full bg-slate-300 [animation-delay:-0.1s]" />
-            <span className="h-1.5 w-1.5 animate-bounce rounded-full bg-slate-300" />
-          </div>
         )}
       </div>
 
@@ -149,7 +167,7 @@ export function ChatPanel({ onCollapse }: { onCollapse: () => void }) {
               }
             }}
             rows={1}
-            placeholder="Ask the analyst…"
+            placeholder="Ask about your data…"
             className="max-h-32 flex-1 resize-none bg-transparent px-2 py-1.5 text-sm outline-none"
           />
           <button
@@ -167,45 +185,67 @@ export function ChatPanel({ onCollapse }: { onCollapse: () => void }) {
 
 function AssistantBubble({
   msg,
+  streaming,
   onOpenChart,
 }: {
   msg: AssistantMsg;
+  streaming: boolean;
   onOpenChart: (r: ChartRequest) => void;
 }) {
-  const [showCode, setShowCode] = useState(false);
+  const [openSql, setOpenSql] = useState<number | null>(null);
+  const working = streaming && !msg.done;
   return (
     <div className="animate-in rounded-2xl rounded-bl-sm border border-slate-200 bg-white px-3.5 py-2.5 text-sm text-slate-800 shadow-sm">
-      <div className="whitespace-pre-wrap leading-relaxed">{msg.text || "…"}</div>
-
-      {(msg.sql || msg.spec) && (
-        <button
-          onClick={() => setShowCode((s) => !s)}
-          className="mt-2 inline-flex items-center gap-1 rounded-md bg-slate-100 px-2 py-1 text-[11px] font-medium text-slate-600 hover:bg-slate-200"
-        >
-          {showCode ? "Hide" : msg.sql ? "SQL used" : "Chart spec"}
-        </button>
+      {/* Thinking trace */}
+      {msg.steps.length > 0 && (
+        <div className="mb-2 space-y-1 border-l-2 border-slate-100 pl-2.5">
+          {msg.steps.map((s, i) => (
+            <div key={i} className="text-xs text-slate-500">
+              <div className="flex items-center gap-1.5">
+                <span className="text-slate-400">▸</span>
+                <span className="font-medium text-slate-600">{TOOL_LABEL[s.tool] ?? s.tool}</span>
+                {s.summary && <span className="text-slate-400">· {s.summary}</span>}
+                {s.sql && (
+                  <button
+                    onClick={() => setOpenSql(openSql === i ? null : i)}
+                    className="text-indigo-500 hover:underline"
+                  >
+                    SQL
+                  </button>
+                )}
+              </div>
+              {openSql === i && s.sql && (
+                <pre className="mt-1 overflow-auto rounded bg-slate-900 p-2 text-[10px] text-slate-100">
+                  {s.sql}
+                </pre>
+              )}
+            </div>
+          ))}
+        </div>
       )}
-      {showCode && (
-        <pre className="mt-2 max-h-48 overflow-auto rounded-lg bg-slate-900 p-2.5 text-[11px] leading-relaxed text-slate-100">
-          {msg.sql ?? JSON.stringify(msg.spec, null, 2)}
-        </pre>
-      )}
 
-      {msg.spec && (
-        <div className="mt-2.5">
+      {/* Answer */}
+      <div className="whitespace-pre-wrap leading-relaxed">
+        {msg.text}
+        {working && <span className="ml-0.5 inline-block h-3.5 w-1.5 animate-pulse bg-indigo-400 align-middle" />}
+      </div>
+
+      {/* Charts */}
+      {msg.charts.map((c, i) => (
+        <div key={i} className="mt-2.5">
           <div className="rounded-lg border border-slate-100 bg-slate-50 p-2">
-            <VegaChart spec={msg.spec} />
+            <VegaChart spec={c.spec} />
           </div>
-          {msg.chartRequest && (
+          {c.chartRequest && (
             <button
-              onClick={() => onOpenChart(msg.chartRequest!)}
+              onClick={() => onOpenChart(c.chartRequest!)}
               className="mt-1.5 text-[11px] font-medium text-indigo-600 hover:underline"
             >
               Open in Visualize →
             </button>
           )}
         </div>
-      )}
+      ))}
     </div>
   );
 }

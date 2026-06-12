@@ -231,13 +231,17 @@ class Warehouse:
         return introspect.section_manifest(self.con, name)
 
     def drop_section(self, name: str) -> None:
-        """Drop exactly one section. Other sections are untouched."""
+        """Permanently remove exactly one dataset section. Other sections are
+        untouched. Drops the schema + registry row and deletes the preserved
+        source copy."""
         if name not in self._section_names():
             raise SectionNotFoundError(f"no section named {name!r}")
         self.con.execute(f"DROP SCHEMA IF EXISTS {quote_ident(name)} CASCADE")
         self.con.execute(
             f"DELETE FROM {quote_ident(META_SCHEMA)}.sections WHERE name = ?", [name]
         )
+        # Remove the preserved source copy (made read-only at landing).
+        discard_staged_source(self.source_dir, name)
 
     # ---- source preservation (Phase 1.2) --------------------------------
 

@@ -3,152 +3,90 @@ from __future__ import annotations
 import pydantic
 import pytest
 
-from agentic import (
-    AgentDecision,
-    AnalystAgent,
-    ChartAction,
-    NarrativeAction,
-    OllamaBrain,
-    QueryAction,
-    StatTestAction,
-)
+from agentic import AnalystAgent, OllamaBrain, StepDecision
+from agentic.steps import MakeChart, RunSql, RunStat
 from executor import SandboxManager
 from tests.agentic.conftest import FakeBrain
 from warehouse import sha256_file
 
 
-# ---- 5.2 strict action union ------------------------------------------------
+def _agent(root, steps=None, *, answer="Done.", sandbox=None, available=True):
+    brain = FakeBrain(steps, answer=answer, available=available)
+    return AnalystAgent(root, brain, sandbox_manager=sandbox)
 
 
-def test_unknown_action_type_rejected():
+# ---- step union validity ----------------------------------------------------
+
+
+def test_unknown_step_kind_rejected():
     with pytest.raises(pydantic.ValidationError):
-        AgentDecision.model_validate({"action": {"type": "delete", "sql": "x"}})
+        StepDecision.model_validate({"step": {"kind": "delete_everything"}})
 
 
-def test_extra_fields_rejected():
-    with pytest.raises(pydantic.ValidationError):
-        AgentDecision.model_validate(
-            {"action": {"type": "query", "sql": "SELECT 1", "danger": "rm -rf"}}
-        )
+# ---- multi-step loop --------------------------------------------------------
 
 
-def test_each_action_shape_parses():
-    AgentDecision.model_validate({"action": {"type": "query", "sql": "SELECT 1"}})
-    AgentDecision.model_validate(
-        {"action": {"type": "narrative", "text": "hello"}}
-    )
-
-
-# ---- 5.1 agent core ---------------------------------------------------------
-
-
-def _agent(root, decision, **kw):
-    return AnalystAgent(root, FakeBrain(decision), **kw)
-
-
-def test_narrative_action(agent_root):
-    root, _ = agent_root
-    resp = _agent(
-        root, AgentDecision(action=NarrativeAction(type="narrative", text="Hi there!"))
-    ).handle("hello")
-    assert resp.action_type == "narrative"
-    assert resp.response == "Hi there!"
-
-
-def test_query_action_returns_rows(agent_root):
+def test_runs_sql_then_answers(agent_root):
     root, section = agent_root
-    decision = AgentDecision(
-        narration="Counting rows.",
-        action=QueryAction(type="query", sql=f'SELECT count(*) AS n FROM "{section}".raw'),
-    )
-    resp = _agent(root, decision).handle("how many rows?")
-    assert resp.action_type == "query"
-    assert resp.sql is not None
-    assert resp.result["rows"][0][0] == 6
+    steps = [RunSql(kind="run_sql", sql=f'SELECT count(*) AS n FROM "{section}".raw')]
+    turn = _agent(root, steps, answer="There are 6 rows.").handle("how many rows?")
+    assert turn.used_sql and section in turn.used_sql[0]
+    assert turn.response == "There are 6 rows."
+    kinds = [e["type"] for e in turn.events]
+    assert "step" in kinds and "final" in kinds
 
 
-def test_query_action_rejects_non_select(agent_root):
+def test_makes_chart(agent_root):
     root, section = agent_root
-    decision = AgentDecision(
-        action=QueryAction(type="query", sql=f'DROP TABLE "{section}".raw')
-    )
-    resp = _agent(root, decision).handle("delete everything")
-    assert resp.action_type == "query"
-    assert resp.error is not None  # blocked by the query service, not executed
+    steps = [
+        MakeChart(kind="make_chart", chart_type="scatter", section=section, table="raw",
+                  x="dose", y="response"),
+    ]
+    turn = _agent(root, steps).handle("plot dose vs response")
+    assert turn.charts, "expected a chart event"
+    assert turn.charts[0]["spec"]["mark"] == "point"
+
+
+def test_runs_stat_in_sandbox(agent_root, tmp_path):
+    root, section = agent_root
+    mgr = SandboxManager(root, base_dir=tmp_path / "sb")
+    try:
+        steps = [
+            RunStat(kind="run_stat", test="pearsonr", section=section, table="raw",
+                    columns=["dose", "response"]),
+        ]
+        turn = _agent(root, steps, sandbox=mgr).handle("correlate dose and response")
+        stat_step = next(e for e in turn.events if e["type"] == "step" and e["tool"] == "run_stat")
+        assert "pearsonr" in stat_step["summary"]
+        assert "statistic" in stat_step["summary"]
+    finally:
+        mgr.destroy_all()
+
+
+def test_bad_sql_is_handled_not_crashed(agent_root):
+    root, section = agent_root
+    steps = [RunSql(kind="run_sql", sql=f'DROP TABLE "{section}".raw')]
+    turn = _agent(root, steps, answer="Couldn't do that.").handle("delete it")
+    # The loop observes the rejection and still answers; nothing crashes.
+    assert turn.response == "Couldn't do that."
+    sql_step = next(e for e in turn.events if e["type"] == "step" and e["tool"] == "run_sql")
+    assert "ERROR" in (sql_step["summary"] or "")
 
 
 def test_agent_never_writes_canonical(agent_root):
     root, section = agent_root
     canonical = root / "warehouse.duckdb"
     before = sha256_file(canonical)
-    # Even a malicious "query" that's really DML is rejected; canonical untouched.
     for sql in (f'DELETE FROM "{section}".raw', 'CREATE TABLE "_locus".x (a int)'):
-        _agent(root, AgentDecision(action=QueryAction(type="query", sql=sql))).handle("x")
+        _agent(root, [RunSql(kind="run_sql", sql=sql)]).handle("x")
     assert sha256_file(canonical) == before
 
 
-def test_chart_action_returns_spec(agent_root):
-    root, section = agent_root
-    decision = AgentDecision(
-        action=ChartAction(
-            type="chart", chart_type="scatter", section=section, table="raw",
-            x="dose", y="response",
-        )
-    )
-    resp = _agent(root, decision).handle("plot dose vs response")
-    assert resp.action_type == "chart"
-    assert resp.spec["mark"] == "point"
-    assert resp.result["row_count"] == 6
-
-
-def test_stat_test_pearson(agent_root, tmp_path):
-    root, section = agent_root
-    mgr = SandboxManager(root, base_dir=tmp_path / "sb")
-    try:
-        h = mgr.create()
-        decision = AgentDecision(
-            action=StatTestAction(
-                type="stat_test", test="pearsonr", section=section, table="raw",
-                columns=("dose", "response"), sandbox_id=h.id,
-            )
-        )
-        resp = _agent(root, decision, sandbox_manager=mgr).handle("correlate dose and response")
-        assert resp.action_type == "stat_test"
-        assert resp.result["ok"] is True
-        assert resp.result["n"] == 6
-        assert resp.result["pvalue"] < 0.05  # strong positive correlation
-    finally:
-        mgr.destroy_all()
-
-
-def test_stat_test_grouped_ttest(agent_root, tmp_path):
-    root, section = agent_root
-    mgr = SandboxManager(root, base_dir=tmp_path / "sb")
-    try:
-        h = mgr.create()
-        decision = AgentDecision(
-            action=StatTestAction(
-                type="stat_test", test="ttest_ind", section=section, table="raw",
-                columns=("response",), group_by="grp", sandbox_id=h.id,
-            )
-        )
-        resp = _agent(root, decision, sandbox_manager=mgr).handle("compare groups")
-        assert resp.result["ok"] is True
-        assert resp.result["n"] == 6
-    finally:
-        mgr.destroy_all()
-
-
-def test_stat_test_unknown_sandbox(agent_root):
-    root, section = agent_root
-    decision = AgentDecision(
-        action=StatTestAction(
-            type="stat_test", test="pearsonr", section=section, table="raw",
-            columns=("dose", "response"), sandbox_id="nope",
-        )
-    )
-    resp = _agent(root, decision, sandbox_manager=SandboxManager(root)).handle("x")
-    assert resp.error is not None
+def test_blocks_when_ollama_unavailable(agent_root):
+    root, _ = agent_root
+    turn = _agent(root, available=False).handle("hi")
+    assert turn.error is not None
+    assert any(e["type"] == "error" for e in turn.events)
 
 
 # ---- real Ollama (skipped if unavailable) -----------------------------------
@@ -163,7 +101,8 @@ def _ollama_ready() -> bool:
 
 
 @pytest.mark.skipif(not _ollama_ready(), reason="qwen2.5:7b-instruct not available")
-def test_real_agent_produces_valid_action(agent_root):
+def test_real_agent_answers_with_data(agent_root):
     root, _ = agent_root
-    resp = AnalystAgent(root, OllamaBrain()).handle("How many rows are in the dataset?")
-    assert resp.action_type in {"query", "chart", "stat_test", "narrative"}
+    agent = AnalystAgent(root, OllamaBrain())
+    turn = agent.handle("How many rows are in the dataset?")
+    assert turn.response.strip()  # produced a grounded natural-language answer

@@ -142,6 +142,22 @@ def create_app(root: str | Path, *, brain_factory=None) -> FastAPI:
         with state.lock, SchemaService.open(state.root) as svc:
             return ok(svc.get_dataset(section))
 
+    @app.delete("/schema/{section}")
+    def delete_dataset(section: str):
+        with state.lock:
+            wh = Warehouse.open(state.root)
+            try:
+                wh.drop_section(section)  # schema + registry + preserved source
+            finally:
+                wh.close()
+            # Remove the ingest artifacts (contract + audit sidecars).
+            for sub in ("contracts", "audit"):
+                for suffix in (".contract.json", ".audit.json"):
+                    p = state.root / sub / f"{section}{suffix}"
+                    if p.exists():
+                        p.unlink()
+        return ok({"deleted": section})
+
     # ---- query ----
     @app.post("/query")
     def query(body: QueryBody):
@@ -280,27 +296,15 @@ def create_app(root: str | Path, *, brain_factory=None) -> FastAPI:
             return json.dumps(jsonable_encoder(obj)) + "\n"
 
         def stream():
+            # The agent's multi-step loop streams its own events (tool steps,
+            # charts, answer tokens). We hold the warehouse lock for the turn
+            # because the agent opens read-only services/clones.
             with state.lock:
                 agent = AnalystAgent(
                     state.root, state.brain_factory(), sandbox_manager=state.sandboxes
                 )
-                try:
-                    resp = agent.handle(body.message, body.history)
-                except OllamaUnavailableError as exc:
-                    yield _line({"type": "error", "error": str(exc)})
-                    return
-            # Staged events: the action used, its result, then the message.
-            yield _line(
-                {
-                    "type": "action",
-                    "action_type": resp.action_type,
-                    "sql": resp.sql,
-                    "spec": resp.spec,
-                    "chart_request": resp.chart_request,
-                }
-            )
-            yield _line({"type": "result", "result": resp.result})
-            yield _line({"type": "message", "response": resp.response, "error": resp.error})
+                for event in agent.run(body.message, body.history):
+                    yield _line(event)
 
         return StreamingResponse(stream(), media_type="application/x-ndjson")
 

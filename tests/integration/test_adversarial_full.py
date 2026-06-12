@@ -12,7 +12,7 @@ from pathlib import Path
 
 from fastapi.testclient import TestClient
 
-from agentic import AgentDecision, QueryAction
+from agentic.steps import Answer, RunSql, StepDecision
 from api.rest import create_app
 from warehouse import sha256_file
 
@@ -25,15 +25,27 @@ ORDERS = (
 
 
 class _Brain:
-    def __init__(self, decision):
-        self._d = decision
+    def __init__(self, steps=None, answer="Done."):
+        self._steps = list(steps or [])
+        self._i = 0
+        self._answer = answer
 
-    def decide(self, system, user):
-        return self._d
+    def ensure_available(self):
+        pass
+
+    def decide_step(self, system, messages):
+        if self._i < len(self._steps):
+            s = self._steps[self._i]
+            self._i += 1
+            return StepDecision(step=s)
+        return StepDecision(step=Answer(kind="answer"))
+
+    def stream_answer(self, system, messages):
+        yield self._answer
 
 
-def _client(tmp_path, decision=None):
-    return TestClient(create_app(tmp_path / "wh", brain_factory=lambda: _Brain(decision)))
+def _client(tmp_path, steps=None):
+    return TestClient(create_app(tmp_path / "wh", brain_factory=lambda: _Brain(steps)))
 
 
 def _ingest(client, name="orders.csv", content=ORDERS, engine="deterministic", biopack=None):
@@ -54,17 +66,15 @@ def test_sql_injection_via_agent_chat_is_blocked(tmp_path):
     before = sha256_file(_canonical(tmp_path))
 
     # The agent emits a DML "query"; the query service must reject it.
-    decision = AgentDecision(
-        action=QueryAction(type="query", sql=f'DELETE FROM "{section}".raw')
-    )
-    client = _client(tmp_path, decision)
+    steps = [RunSql(kind="run_sql", sql=f'DELETE FROM "{section}".raw')]
+    client = _client(tmp_path, steps)
     events = [
         json.loads(l)
         for l in client.post("/agent/chat", json={"message": "wipe it", "history": []}).text.splitlines()
         if l.strip()
     ]
-    msg = next(e for e in events if e["type"] == "message")
-    assert msg["error"] is not None  # blocked, surfaced as an error
+    sql_step = next(e for e in events if e["type"] == "step" and e["tool"] == "run_sql")
+    assert "ERROR" in (sql_step["summary"] or "")  # rejected by the query service
     assert sha256_file(_canonical(tmp_path)) == before  # canonical untouched
 
 

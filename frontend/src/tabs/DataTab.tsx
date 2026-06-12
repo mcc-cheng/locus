@@ -11,7 +11,8 @@ function quote(id: string): string {
 }
 
 export function DataTab() {
-  const { selectedSection, openDataset, schemaVersion } = useApp();
+  const { selectedSection, openDataset, setSelectedSection, refreshSchema, schemaVersion } =
+    useApp();
   const [datasets, setDatasets] = useState<DatasetSummary[]>([]);
   const [manifest, setManifest] = useState<SectionManifest | null>(null);
   const [table, setTable] = useState<string | null>(null);
@@ -54,6 +55,27 @@ export function DataTab() {
     const q = filter.toLowerCase();
     return result.rows.filter((r) => r.some((c) => String(c ?? "").toLowerCase().includes(q)));
   }, [result, filter]);
+
+  async function deleteDataset() {
+    if (!selectedSection) return;
+    const name = manifest?.source_filename ?? selectedSection;
+    if (
+      !window.confirm(
+        `Delete "${name}"? This permanently removes the dataset and its preserved source copy. This cannot be undone.`,
+      )
+    )
+      return;
+    try {
+      await api.deleteDataset(selectedSection);
+      setSelectedSection(null);
+      setManifest(null);
+      setTable(null);
+      setResult(null);
+      refreshSchema();
+    } catch (e) {
+      setError(String((e as Error).message ?? e));
+    }
+  }
 
   function exportCsv() {
     if (!result) return;
@@ -145,8 +167,11 @@ export function DataTab() {
               />
               <div className="flex items-center gap-2 text-sm text-slate-500">
                 <Badge>read-only</Badge>
-                <Button variant="secondary" onClick={exportCsv}>
+                <Button variant="secondary" size="sm" onClick={exportCsv}>
                   Export CSV
+                </Button>
+                <Button variant="danger" size="sm" onClick={deleteDataset}>
+                  Delete dataset
                 </Button>
               </div>
             </div>

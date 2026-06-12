@@ -108,15 +108,10 @@ export interface DepsHealth {
 
 // Streaming agent events (NDJSON).
 export type AgentEvent =
-  | {
-      type: "action";
-      action_type: string;
-      sql: string | null;
-      spec: Record<string, unknown> | null;
-      chart_request: ChartRequest | null;
-    }
-  | { type: "result"; result: unknown }
-  | { type: "message"; response: string; error: string | null }
+  | { type: "step"; tool: "run_sql" | "make_chart" | "run_stat"; thought?: string; sql?: string; summary?: string }
+  | { type: "chart"; spec: Record<string, unknown>; chart_request: ChartRequest | null }
+  | { type: "token"; text: string }
+  | { type: "final"; response: string }
   | { type: "error"; error: string };
 
 export interface ChatTurn {

@@ -84,6 +84,24 @@ def test_query_rejects_ddl_envelope(client):
     assert body["ok"] is False and body["error"]
 
 
+def test_delete_dataset(client):
+    r = _ingest(client)
+    section = r.json()["data"]["section"]
+    assert client.get("/schema").json()["data"]["dataset_count"] == 1
+
+    deleted = client.delete(f"/schema/{section}")
+    assert deleted.status_code == 200
+    assert deleted.json()["data"]["deleted"] == section
+
+    # Gone from the warehouse and from disk.
+    assert client.get("/schema").json()["data"]["dataset_count"] == 0
+    assert client.get(f"/schema/{section}").status_code == 404
+
+
+def test_delete_unknown_dataset_404(client):
+    assert client.delete("/schema/does_not_exist").status_code == 404
+
+
 def test_unknown_section_404(client):
     r = client.get("/schema/does_not_exist")
     assert r.status_code == 404

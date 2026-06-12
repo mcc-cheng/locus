@@ -11,7 +11,7 @@ from __future__ import annotations
 import pytest
 from fastapi.testclient import TestClient
 
-from agentic import AgentDecision, ChartAction, QueryAction
+from agentic.steps import Answer, StepDecision
 from api.rest import create_app
 
 ORDERS = (
@@ -24,16 +24,30 @@ ORDERS = (
 
 
 class _Brain:
-    def __init__(self, decision):
-        self._d = decision
+    """Scripts a sequence of tool steps, then streams a canned answer."""
 
-    def decide(self, system, user):
-        return self._d
+    def __init__(self, steps=None, answer="Done."):
+        self._steps = list(steps or [])
+        self._i = 0
+        self._answer = answer
+
+    def ensure_available(self):
+        pass
+
+    def decide_step(self, system, messages):
+        if self._i < len(self._steps):
+            s = self._steps[self._i]
+            self._i += 1
+            return StepDecision(step=s)
+        return StepDecision(step=Answer(kind="answer"))
+
+    def stream_answer(self, system, messages):
+        yield self._answer
 
 
-def _client(tmp_path, decision=None):
+def _client(tmp_path, steps=None, answer="Done."):
     return TestClient(
-        create_app(tmp_path / "wh", brain_factory=lambda: _Brain(decision))
+        create_app(tmp_path / "wh", brain_factory=lambda: _Brain(steps, answer))
     )
 
 
@@ -133,11 +147,11 @@ def test_agent_chart_matches_ui_chart(tmp_path):
         json={"type": "bar", "section": section, "table": "raw", "x": "category"},
     ).json()["data"]
 
-    # Agent builds the same chart via a ChartAction.
-    decision = AgentDecision(
-        action=ChartAction(type="chart", chart_type="bar", section=section, table="raw", x="category")
-    )
-    agent_client = _client(tmp_path, decision)
+    # Agent builds the same chart via a make_chart tool step.
+    from agentic.steps import MakeChart
+
+    steps = [MakeChart(kind="make_chart", chart_type="bar", section=section, table="raw", x="category")]
+    agent_client = _client(tmp_path, steps)
     events = [
         __import__("json").loads(line)
         for line in agent_client.post(
@@ -145,27 +159,30 @@ def test_agent_chart_matches_ui_chart(tmp_path):
         ).text.splitlines()
         if line.strip()
     ]
-    action_ev = next(e for e in events if e["type"] == "action")
+    chart_ev = next(e for e in events if e["type"] == "chart")
     # Same encoding/mark — the agent goes through the same server aggregation.
-    assert action_ev["spec"]["mark"] == ui["spec"]["mark"]
-    assert action_ev["spec"]["encoding"] == ui["spec"]["encoding"]
+    assert chart_ev["spec"]["mark"] == ui["spec"]["mark"]
+    assert chart_ev["spec"]["encoding"] == ui["spec"]["encoding"]
+    assert chart_ev["chart_request"]["section"] == section
 
 
-def test_agent_query_action_shape_matches_frontend(tmp_path):
-    # The streamed action event carries exactly the fields the UI reads.
+def test_agent_chat_event_shapes(tmp_path):
+    # The streamed events carry exactly the fields the UI reads.
+    from agentic.steps import RunSql
+
     base = _client(tmp_path)
     _ingest(base)
     section = base.get("/schema").json()["data"]["datasets"][0]["name"]
-    decision = AgentDecision(
-        action=QueryAction(type="query", sql=f'SELECT 1 FROM "{section}".raw')
-    )
-    client = _client(tmp_path, decision)
+    steps = [RunSql(kind="run_sql", sql=f'SELECT 1 AS one FROM "{section}".raw')]
+    client = _client(tmp_path, steps, answer="42")
     events = [
         __import__("json").loads(line)
         for line in client.post("/agent/chat", json={"message": "x", "history": []}).text.splitlines()
         if line.strip()
     ]
-    types = [e["type"] for e in events]
-    assert types == ["action", "result", "message"]
-    action = next(e for e in events if e["type"] == "action")
-    assert set(action) >= {"type", "action_type", "sql", "spec", "chart_request"}
+    kinds = {e["type"] for e in events}
+    assert {"step", "token", "final"} <= kinds
+    step = next(e for e in events if e["type"] == "step")
+    assert set(step) >= {"type", "tool", "sql", "summary"}
+    final = next(e for e in events if e["type"] == "final")
+    assert "response" in final

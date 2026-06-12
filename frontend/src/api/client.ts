@@ -57,6 +57,11 @@ export const api = {
   schema: () => getJSON<WarehouseSummary>("/schema"),
   schemaSection: (section: string) =>
     getJSON<SectionManifest>(`/schema/${encodeURIComponent(section)}`),
+  async deleteDataset(section: string): Promise<{ deleted: string }> {
+    return unwrap<{ deleted: string }>(
+      await fetch(`${API_BASE}/schema/${encodeURIComponent(section)}`, { method: "DELETE" }),
+    );
+  },
 
   query: (sql: string, page = 1, pageSize = 50, timeoutS?: number) =>
     postJSON<QueryResult>("/query", { sql, page, page_size: pageSize, timeout_s: timeoutS }),

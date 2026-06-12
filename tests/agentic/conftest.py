@@ -5,6 +5,7 @@ from pathlib import Path
 
 import pytest
 
+from agentic.steps import Answer, StepDecision
 from ingest import DeterministicIngestor
 from warehouse import Warehouse
 
@@ -32,10 +33,27 @@ def agent_root(tmp_path: Path) -> tuple[Path, str]:
 
 
 class FakeBrain:
-    """Returns a canned AgentDecision."""
+    """Scripts a fixed sequence of tool steps, then answers with canned text."""
 
-    def __init__(self, decision):
-        self._decision = decision
+    def __init__(self, steps=None, *, answer="Here is the answer.", available=True):
+        self._steps = list(steps or [])
+        self._i = 0
+        self._answer = answer
+        self._available = available
 
-    def decide(self, system: str, user: str):
-        return self._decision
+    def ensure_available(self):
+        if not self._available:
+            from ingest.errors import OllamaUnavailableError
+
+            raise OllamaUnavailableError("ollama down (test)")
+
+    def decide_step(self, system, messages):
+        if self._i < len(self._steps):
+            step = self._steps[self._i]
+            self._i += 1
+            return StepDecision(thought="", step=step)
+        return StepDecision(thought="", step=Answer(kind="answer"))
+
+    def stream_answer(self, system, messages):
+        for word in self._answer.split(" "):
+            yield word + " "

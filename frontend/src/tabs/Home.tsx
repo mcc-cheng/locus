@@ -7,7 +7,7 @@ import { DataIcon, ShieldIcon, UploadIcon } from "../components/icons";
 import type { ReactNode } from "react";
 
 export function Home() {
-  const { openDataset, setTab, schemaVersion } = useApp();
+  const { openDataset, setTab, refreshSchema, schemaVersion } = useApp();
   const [summary, setSummary] = useState<WarehouseSummary | null>(null);
   const [error, setError] = useState<string | null>(null);
 
@@ -16,6 +16,16 @@ export function Home() {
     setSummary(null);
     api.schema().then(setSummary).catch((e) => setError(String(e.message ?? e)));
   }, [schemaVersion]);
+
+  async function remove(section: string, filename: string) {
+    if (!window.confirm(`Delete "${filename}"? This permanently removes the dataset.`)) return;
+    try {
+      await api.deleteDataset(section);
+      refreshSchema();
+    } catch (e) {
+      setError(String((e as Error).message ?? e));
+    }
+  }
 
   if (error) return <ErrorBox message={error} />;
 
@@ -108,9 +118,18 @@ export function Home() {
                     <Badge tone="green">{d.status}</Badge>
                   </td>
                   <td className="px-5 text-right">
-                    <Button variant="secondary" size="sm" onClick={() => openDataset(d.name)}>
-                      Open
-                    </Button>
+                    <div className="flex justify-end gap-2">
+                      <Button variant="secondary" size="sm" onClick={() => openDataset(d.name)}>
+                        Open
+                      </Button>
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        onClick={() => remove(d.name, d.source_filename)}
+                      >
+                        Delete
+                      </Button>
+                    </div>
                   </td>
                 </tr>
               ))}

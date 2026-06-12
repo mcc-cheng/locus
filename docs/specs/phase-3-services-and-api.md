@@ -46,6 +46,7 @@ Endpoints, all returning `{ok, data, error}`:
 | POST | `/ingest` | multipart CSV upload; `engine` + optional `biopack` form fields |
 | GET | `/schema` | warehouse summary + datasets |
 | GET | `/schema/{section}` | one dataset's structure |
+| DELETE | `/schema/{section}` | permanently remove a dataset (schema + source + sidecars) |
 | POST | `/query` | SELECT-only SQL, paginated |
 | POST | `/visualize` | chart request → Vega-Lite + data |
 | GET | `/health` | liveness |

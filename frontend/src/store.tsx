@@ -8,6 +8,7 @@ interface AppState {
   setTab: (t: Tab) => void;
   selectedSection: string | null;
   openDataset: (section: string) => void;
+  setSelectedSection: (s: string | null) => void;
   /** The agent panel is always present; this only narrows it to a rail. */
   panelCollapsed: boolean;
   setPanelCollapsed: (b: boolean) => void;
@@ -62,6 +63,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
     setTab,
     selectedSection,
     openDataset,
+    setSelectedSection,
     panelCollapsed,
     setPanelCollapsed,
     vizHandoff,
