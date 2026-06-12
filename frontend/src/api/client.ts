@@ -1,6 +1,7 @@
 import type {
   AgentEvent,
   ChartRequest,
+  ChartSuggestion,
   ChatTurn,
   DepsHealth,
   Envelope,
@@ -67,6 +68,10 @@ export const api = {
     postJSON<QueryResult>("/query", { sql, page, page_size: pageSize, timeout_s: timeoutS }),
 
   visualize: (req: ChartRequest) => postJSON<VisualizationResult>("/visualize", req),
+  chartSuggestions: (section: string, table = "raw") =>
+    getJSON<ChartSuggestion[]>(
+      `/visualize/suggestions?section=${encodeURIComponent(section)}&table=${encodeURIComponent(table)}`,
+    ),
 
   async ingest(
     file: File,

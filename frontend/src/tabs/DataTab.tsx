@@ -100,7 +100,7 @@ export function DataTab() {
       ?.stored_type ?? "";
 
   return (
-    <div className="flex gap-6">
+    <div className="flex h-full gap-6">
       {/* Dataset + table selector */}
       <aside className="w-56 shrink-0">
         <PageTitle title="Data" />
@@ -175,12 +175,12 @@ export function DataTab() {
                 </Button>
               </div>
             </div>
-            <div className="overflow-x-auto">
+            <div className="max-h-[calc(100vh-280px)] overflow-auto rounded-lg border border-slate-100">
               <table className="w-full text-xs">
-                <thead>
-                  <tr className="border-b border-slate-200 text-left">
+                <thead className="sticky top-0 z-10 bg-white shadow-[0_1px_0_rgba(226,232,240,1)]">
+                  <tr className="text-left">
                     {result.columns.map((c) => (
-                      <th key={c} className="px-2 py-1.5">
+                      <th key={c} className="px-2.5 py-2">
                         <div className="font-semibold text-slate-700">{c}</div>
                         <div className="font-normal text-slate-400">{typeOf(c)}</div>
                       </th>

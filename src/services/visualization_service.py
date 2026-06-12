@@ -16,7 +16,7 @@ from __future__ import annotations
 from pathlib import Path
 
 from .errors import VisualizationError
-from .models import ChartRequest, VisualizationResult
+from .models import ChartRequest, ChartSuggestion, VisualizationResult
 from .query_service import QueryService
 
 MAX_PAYLOAD_ROWS = 10_000
@@ -84,6 +84,111 @@ class VisualizationService:
             "scatter": self._scatter,
         }[req.type]
         return builder(req)
+
+    # ---- data-driven suggestions ----------------------------------------
+
+    def _profile(self, section: str, table: str) -> dict[str, dict]:
+        """Per-column stats: distinct count, non-null count, numeric count —
+        computed in a single pass over the table."""
+        columns = self._qs.table_columns(section, table)
+        if not columns:
+            raise VisualizationError(f"no table {table!r} in dataset {section!r}")
+        parts = []
+        for i, c in enumerate(columns):
+            q = _q(c)
+            parts.append(f'COUNT(DISTINCT {q}) AS d{i}')
+            parts.append(f'COUNT({q}) AS nn{i}')
+            parts.append(f'COUNT(TRY_CAST({q} AS DOUBLE)) AS num{i}')
+        res = self._qs.run(
+            f"SELECT COUNT(*) AS n, {', '.join(parts)} FROM {_qt(section, table)}", page_size=1
+        )
+        row = dict(zip(res.columns, res.rows[0])) if res.rows else {}
+        n = int(row.get("n", 0) or 0)
+        prof: dict[str, dict] = {}
+        for i, c in enumerate(columns):
+            distinct = int(row.get(f"d{i}", 0) or 0)
+            nn = int(row.get(f"nn{i}", 0) or 0)
+            num = int(row.get(f"num{i}", 0) or 0)
+            prof[c] = {
+                "distinct": distinct,
+                "nn": nn,
+                "n": n,
+                "numeric": nn > 0 and num / nn >= 0.8,
+                # id-like: only meaningful once there are enough rows to judge.
+                "unique": n >= 20 and distinct >= 0.9 * n,
+            }
+        return prof
+
+    def suggest(self, section: str, table: str = "raw") -> list[ChartSuggestion]:
+        """Suggest charts from the column types actually present in the data."""
+        prof = self._profile(section, table)
+        cols = list(prof.keys())
+
+        def is_num(c: str) -> bool:
+            return prof[c]["numeric"] and not prof[c]["unique"]
+
+        def is_cat(c: str) -> bool:
+            return 2 <= prof[c]["distinct"] <= 25 and not prof[c]["unique"]
+
+        def looks(c: str, *words: str) -> bool:
+            cl = c.lower()
+            return any(w in cl for w in words)
+
+        num_all = [c for c in cols if is_num(c)]
+        numerics = [c for c in num_all if prof[c]["distinct"] >= 5]  # continuous-ish
+        cats = sorted((c for c in cols if is_cat(c)), key=lambda c: prof[c]["distinct"])
+        out: list[ChartSuggestion] = []
+
+        def add(title, desc, **req):
+            out.append(
+                ChartSuggestion(
+                    title=title, description=desc,
+                    request=ChartRequest(section=section, table=table, **req),
+                )
+            )
+
+        # Domain hints first.
+        dose = next((c for c in cols if looks(c, "dose", "conc")), None)
+        resp = next((c for c in cols if looks(c, "response", "viab", "readout", "effect", "inhib")), None)
+        if dose and resp and prof[dose]["numeric"] and prof[resp]["numeric"]:
+            series = next((c for c in cats if looks(c, "compound", "drug", "name", "treatment")), None)
+            add("Dose-response", f"{resp} vs {dose} (log scale)",
+                type="dose_response", x=dose, y=resp, color=series)
+        rowc = next((c for c in cols if looks(c, "well_row", "row")), None)
+        colc = next((c for c in cols if looks(c, "well_col", "col", "column")), None)
+        valc = next((c for c in num_all if looks(c, "readout", "value", "signal", "intensity")), None) or (num_all[0] if num_all else None)
+        if rowc and colc and valc and rowc != colc:
+            add("Plate heatmap", f"{valc} across {rowc} × {colc}",
+                type="heatmap", row=rowc, col=colc, value=valc)
+
+        # Distributions for numeric columns.
+        for c in numerics[:3]:
+            add(f"Distribution of {c}", "Histogram", type="histogram", x=c)
+
+        # Category breakdowns.
+        for c in cats[:3]:
+            add(f"Count by {c}", "Bar chart", type="bar", x=c)
+
+        # Numeric by category (averages).
+        if cats and numerics:
+            add(f"Average {numerics[0]} by {cats[0]}", "Bar chart",
+                type="bar", x=cats[0], y=numerics[0], aggregate="avg")
+
+        # A scatter of the first two numeric columns.
+        if len(numerics) >= 2:
+            color = cats[0] if cats else None
+            add(f"{numerics[0]} vs {numerics[1]}", "Scatter",
+                type="scatter", x=numerics[0], y=numerics[1], color=color)
+
+        # De-dup by (type + key columns), cap to 8.
+        seen, deduped = set(), []
+        for s in out:
+            key = (s.request.type, s.request.x, s.request.y, s.request.row, s.request.col, s.request.value)
+            if key in seen:
+                continue
+            seen.add(key)
+            deduped.append(s)
+        return deduped[:8]
 
     # ---- chart builders --------------------------------------------------
 

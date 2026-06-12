@@ -33,8 +33,8 @@ from .brain import AgentError, Brain
 from .stats import build_stat_script, parse_stat_output
 from .steps import Answer, MakeChart, RunSql, RunStat
 
-MAX_STEPS = 6
-_PREVIEW_ROWS = 20
+MAX_STEPS = 4
+_PREVIEW_ROWS = 12
 _CELL = 60
 
 _TOOLS_DOC = """\
@@ -64,9 +64,14 @@ than necessary.
 
 _ANSWER_SYSTEM = """\
 You are Locus's data analyst. Using ONLY the observations gathered above (query
-results, charts, statistics), write a clear, concise answer to the user's latest
-question. Cite the concrete numbers you found. If you created a chart, mention it.
-Do not invent data you did not observe. Use short paragraphs or bullet points.
+results, charts, statistics), answer the user's latest question.
+
+Format your answer in clean Markdown:
+- Start directly with the answer — no preamble like "Based on the data".
+- **Bold** the key numbers.
+- Use a short bullet list for breakdowns; a Markdown table for 2+ columns of data.
+- Keep it concise (a few sentences or bullets). If you made a chart, say so briefly.
+- Never invent numbers you did not observe.
 """
 
 
@@ -122,10 +127,10 @@ class AnalystAgent:
                 lines.append(f'    table "{t.name}" ({t.row_count} rows): {cols}')
             # a couple of sample rows from raw so the model "sees" the data
             try:
-                sample = qs.run(f'SELECT * FROM "{d.name}"."raw"', page=1, page_size=3)
+                sample = qs.run(f'SELECT * FROM "{d.name}"."raw"', page=1, page_size=2)
                 if sample.rows:
                     lines.append("    sample of raw:")
-                    lines.append("      " + _fmt_table(list(sample.columns), sample.rows, 3).replace("\n", "\n      "))
+                    lines.append("      " + _fmt_table(list(sample.columns), sample.rows, 2).replace("\n", "\n      "))
             except ServiceError:
                 pass
         return "\n".join(lines)

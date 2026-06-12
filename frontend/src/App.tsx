@@ -66,13 +66,21 @@ export function App() {
         </div>
       </nav>
 
-      {/* Main content */}
+      {/* Main content — full width; narrow tabs self-constrain. */}
       <main className="flex min-w-0 flex-1 flex-col overflow-auto">
         <StatusBar />
-        <div className="mx-auto w-full max-w-5xl px-10 py-9">
-          <div key={tab} className="animate-in">
-            {tab === "home" && <Home />}
-            {tab === "upload" && <Upload />}
+        <div className="w-full flex-1 px-8 py-8">
+          <div key={tab} className="animate-in h-full">
+            {tab === "home" && (
+              <div className="mx-auto max-w-5xl">
+                <Home />
+              </div>
+            )}
+            {tab === "upload" && (
+              <div className="mx-auto max-w-3xl">
+                <Upload />
+              </div>
+            )}
             {tab === "data" && <DataTab />}
             {tab === "visualize" && <Visualize />}
             {tab === "sandbox" && <Sandbox />}

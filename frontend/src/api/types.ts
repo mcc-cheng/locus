@@ -79,6 +79,12 @@ export interface VisualizationResult {
   execution_ms: number;
 }
 
+export interface ChartSuggestion {
+  title: string;
+  description: string;
+  request: ChartRequest;
+}
+
 export interface IngestResult {
   section: string;
   engine: string;

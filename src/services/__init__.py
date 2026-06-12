@@ -8,6 +8,7 @@ from .errors import (
 )
 from .models import (
     ChartRequest,
+    ChartSuggestion,
     DatasetSummary,
     VisualizationResult,
     WarehouseSummary,
@@ -24,6 +25,7 @@ __all__ = [
     "DatasetSummary",
     "WarehouseSummary",
     "ChartRequest",
+    "ChartSuggestion",
     "VisualizationResult",
     "ServiceError",
     "QueryError",

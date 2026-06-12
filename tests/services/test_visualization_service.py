@@ -136,6 +136,22 @@ def test_blank_column_role_treated_as_unset(assay_root):
     assert "color" not in out.spec["encoding"]
 
 
+def test_suggestions_are_data_driven(assay_root):
+    root, section = assay_root
+    with VisualizationService.open(root) as viz:
+        suggestions = viz.suggest(section, "raw")
+    assert suggestions, "expected at least one suggestion"
+    types = {s.request.type for s in suggestions}
+    # well_row/well_col + a numeric value -> a heatmap is suggested.
+    assert "heatmap" in types
+    # numeric columns -> histograms; categorical -> bar.
+    assert "histogram" in types
+    # every suggestion is a runnable request with the right section/table.
+    for s in suggestions:
+        assert s.request.section == section and s.request.table == "raw"
+        assert s.title and s.description
+
+
 def test_missing_required_column_raises(assay_root):
     root, section = assay_root
     with VisualizationService.open(root) as viz:

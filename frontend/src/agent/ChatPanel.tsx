@@ -3,6 +3,7 @@ import { api } from "../api/client";
 import type { ChartRequest, ChatTurn } from "../api/types";
 import { useApp } from "../store";
 import { VegaChart } from "../components/VegaChart";
+import { Markdown } from "../components/Markdown";
 import { ChevronRight, SendIcon, SparkleIcon } from "../components/icons";
 
 interface Step {
@@ -224,10 +225,12 @@ function AssistantBubble({
         </div>
       )}
 
-      {/* Answer */}
-      <div className="whitespace-pre-wrap leading-relaxed">
-        {msg.text}
-        {working && <span className="ml-0.5 inline-block h-3.5 w-1.5 animate-pulse bg-indigo-400 align-middle" />}
+      {/* Answer (Markdown) */}
+      <div>
+        {msg.text ? <Markdown text={msg.text} /> : null}
+        {working && (
+          <span className="ml-0.5 inline-block h-3.5 w-1.5 animate-pulse bg-indigo-400 align-middle" />
+        )}
       </div>
 
       {/* Charts */}

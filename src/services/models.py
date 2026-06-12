@@ -53,6 +53,14 @@ class VisualizationResult(_Frozen):
     execution_ms: float = 0.0
 
 
+class ChartSuggestion(_Frozen):
+    """A suggested chart derived from the data's actual column types."""
+
+    title: str
+    description: str
+    request: ChartRequest
+
+
 class DatasetSummary(_Frozen):
     """One row of the Home/overview list (derived from GET /schema)."""
 

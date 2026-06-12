@@ -86,6 +86,17 @@ def create_app(root: str | Path, *, brain_factory=None) -> FastAPI:
 
     @asynccontextmanager
     async def lifespan(_app: FastAPI):
+        # Warm the LLM into memory in the background so the first question is fast.
+        def _warm():
+            try:
+                brain = state.brain_factory()
+                warm = getattr(brain, "warm_up", None)
+                if callable(warm):
+                    warm()
+            except Exception:
+                pass
+
+        threading.Thread(target=_warm, daemon=True).start()
         yield
         state.sandboxes.destroy_all()  # session end: discard all sandboxes
 
@@ -181,6 +192,11 @@ def create_app(root: str | Path, *, brain_factory=None) -> FastAPI:
     def visualize(req: ChartRequest):
         with state.lock, VisualizationService.open(state.root) as viz:
             return ok(viz.visualize(req))
+
+    @app.get("/visualize/suggestions")
+    def visualize_suggestions(section: str, table: str = "raw"):
+        with state.lock, VisualizationService.open(state.root) as viz:
+            return ok(viz.suggest(section, table))
 
     # ---- ingest ----
     @app.post("/ingest")

@@ -54,11 +54,28 @@ class OllamaBrain:
         client=None,
         temperature: float = 0.1,
         num_retries: int = 3,
+        keep_alive: str = "30m",
     ) -> None:
         self.model = model
         self.temperature = temperature
         self.num_retries = num_retries
+        # Keep the model resident in Ollama between calls so we don't pay the
+        # cold-load penalty on every step — the single biggest latency win.
+        self.keep_alive = keep_alive
         self._client = client or ollama.Client(host=host)
+
+    def warm_up(self) -> None:
+        """Load the model into memory now (best-effort), so the first real
+        request is fast. Safe to call in the background at startup."""
+        try:
+            self._client.chat(
+                model=self.model,
+                messages=[{"role": "user", "content": "ok"}],
+                keep_alive=self.keep_alive,
+                options={"num_predict": 1},
+            )
+        except Exception:
+            pass
 
     def ensure_available(self) -> None:
         try:
@@ -81,7 +98,8 @@ class OllamaBrain:
                     model=self.model,
                     messages=convo,
                     format=schema,
-                    options={"temperature": self.temperature},
+                    keep_alive=self.keep_alive,
+                    options={"temperature": self.temperature, "num_predict": 512},
                 )
             except Exception as exc:
                 last_transport = exc
@@ -102,6 +120,7 @@ class OllamaBrain:
             model=self.model,
             messages=convo,
             stream=True,
+            keep_alive=self.keep_alive,
             options={"temperature": self.temperature},
         ):
             piece = chunk.message.content

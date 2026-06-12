@@ -76,6 +76,16 @@ def test_ingest_then_schema_query_visualize(client):
     assert v["data"]["spec"]["mark"] == "bar"
 
 
+def test_visualize_suggestions(client):
+    _ingest(client)
+    section = client.get("/schema").json()["data"]["datasets"][0]["name"]
+    r = client.get(f"/visualize/suggestions?section={section}&table=raw")
+    assert r.status_code == 200
+    data = r.json()["data"]
+    assert isinstance(data, list) and len(data) > 0
+    assert all({"title", "description", "request"} <= set(s) for s in data)
+
+
 def test_query_rejects_ddl_envelope(client):
     _ingest(client)
     r = client.post("/query", json={"sql": 'CREATE TABLE "_locus".x (a INT)'})
