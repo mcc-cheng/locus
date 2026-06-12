@@ -24,6 +24,8 @@ frontend/dist/
 
 # Tauri / packaging (Phase 7)
 src-tauri/target/
+src-tauri/gen/
+src-tauri/icons/
 packaging/build/
 packaging/dist/
 

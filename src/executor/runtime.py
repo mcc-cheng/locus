@@ -37,6 +37,24 @@ _BOOTSTRAP = Path(__file__).parent / "_bootstrap.py"
 _MB = 1024 * 1024
 
 
+def _frozen() -> bool:
+    return bool(getattr(sys, "frozen", False))
+
+
+def _script_cmd(script_path: Path) -> list[str]:
+    # Frozen: the app binary self-dispatches (`exec-script`). Dev: run the
+    # bootstrap .py with the real interpreter.
+    if _frozen():
+        return [sys.executable, "exec-script", str(script_path)]
+    return [sys.executable, str(_BOOTSTRAP), str(script_path)]
+
+
+def _notebook_cmd(input_nb: Path, output_nb: Path) -> list[str]:
+    if _frozen():
+        return [sys.executable, "exec-notebook", str(input_nb), str(output_nb)]
+    return [sys.executable, "-c", _NB_RUNNER, str(input_nb), str(output_nb)]
+
+
 @dataclass(frozen=True)
 class SandboxLimits:
     timeout_s: float = 30.0
@@ -134,7 +152,7 @@ def run_script(
 
     t0 = perf_counter()
     out, errs, rc, timed_out = _run_process(
-        [sys.executable, str(_BOOTSTRAP), str(script_path)],
+        _script_cmd(script_path),
         _base_env(handle, out_dir),
         handle.dir,
         limits.timeout_s,
@@ -187,7 +205,7 @@ def run_notebook(
 
     t0 = perf_counter()
     out, errs, rc, timed_out = _run_process(
-        [sys.executable, "-c", _NB_RUNNER, str(input_nb), str(output_nb)],
+        _notebook_cmd(input_nb, output_nb),
         _base_env(handle, out_dir),
         handle.dir,
         limits.timeout_s,
