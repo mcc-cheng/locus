@@ -8,7 +8,7 @@ from __future__ import annotations
 from datetime import datetime
 from typing import Any, Literal
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 
 class _Frozen(BaseModel):
@@ -37,6 +37,12 @@ class ChartRequest(BaseModel):
     value: str | None = None  # heatmap measured value
     aggregate: Aggregate = "count"
     bins: int = Field(default=30, ge=2, le=200)
+
+    @field_validator("x", "y", "color", "row", "col", "value", mode="before")
+    @classmethod
+    def _blank_is_none(cls, v):
+        # A client may send "" for an unselected column; treat it as unset.
+        return None if isinstance(v, str) and v.strip() == "" else v
 
 
 class VisualizationResult(_Frozen):

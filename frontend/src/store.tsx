@@ -8,8 +8,9 @@ interface AppState {
   setTab: (t: Tab) => void;
   selectedSection: string | null;
   openDataset: (section: string) => void;
-  panelOpen: boolean;
-  setPanelOpen: (b: boolean) => void;
+  /** The agent panel is always present; this only narrows it to a rail. */
+  panelCollapsed: boolean;
+  setPanelCollapsed: (b: boolean) => void;
   /** A chart handed off from the agent panel to the Visualize tab. */
   vizHandoff: ChartRequest | null;
   openInVisualize: (req: ChartRequest) => void;
@@ -21,19 +22,19 @@ interface AppState {
 
 const Ctx = createContext<AppState | null>(null);
 
-const PANEL_KEY = "locus.panelOpen";
+const PANEL_KEY = "locus.panelCollapsed";
 
 export function AppProvider({ children }: { children: ReactNode }) {
   const [tab, setTab] = useState<Tab>("home");
   const [selectedSection, setSelectedSection] = useState<string | null>(null);
-  const [panelOpen, setPanelOpenState] = useState<boolean>(
+  const [panelCollapsed, setPanelCollapsedState] = useState<boolean>(
     () => localStorage.getItem(PANEL_KEY) === "1",
   );
   const [vizHandoff, setVizHandoff] = useState<ChartRequest | null>(null);
   const [schemaVersion, setSchemaVersion] = useState(0);
 
-  const setPanelOpen = (b: boolean) => {
-    setPanelOpenState(b);
+  const setPanelCollapsed = (b: boolean) => {
+    setPanelCollapsedState(b);
     localStorage.setItem(PANEL_KEY, b ? "1" : "0");
   };
 
@@ -61,8 +62,8 @@ export function AppProvider({ children }: { children: ReactNode }) {
     setTab,
     selectedSection,
     openDataset,
-    panelOpen,
-    setPanelOpen,
+    panelCollapsed,
+    setPanelCollapsed,
     vizHandoff,
     openInVisualize,
     consumeVizHandoff,

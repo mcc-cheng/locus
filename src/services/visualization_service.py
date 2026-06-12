@@ -150,17 +150,27 @@ class VisualizationService:
     def _heatmap(self, req: ChartRequest) -> VisualizationResult:
         cols = self._require_columns(req, {"row": req.row, "col": req.col, "value": req.value})
         r, c, v = _q(cols["row"]), _q(cols["col"]), _q(cols["value"])
+        # Order numerically when the labels are numbers (so plate columns read
+        # 1,2,…,12 not 1,10,11,12,2). The Vega encoding uses data order
+        # (`sort: null`) to honour it.
         sql = (
             f"SELECT {r} AS row, {c} AS col, avg(TRY_CAST({v} AS DOUBLE)) AS value "
-            f"FROM {_qt(req.section, req.table)} GROUP BY row, col ORDER BY row, col"
+            f"FROM {_qt(req.section, req.table)} GROUP BY row, col "
+            f"ORDER BY TRY_CAST({r} AS DOUBLE) NULLS LAST, {r}, "
+            f"TRY_CAST({c} AS DOUBLE) NULLS LAST, {c}"
         )
         columns, rows, truncated, ms = self._run(sql)
         spec = {
             "mark": "rect",
             "encoding": {
-                "x": {"field": "col", "type": "ordinal", "title": cols["col"]},
-                "y": {"field": "row", "type": "ordinal", "title": cols["row"]},
-                "color": {"field": "value", "type": "quantitative", "title": cols["value"]},
+                "x": {"field": "col", "type": "ordinal", "title": cols["col"], "sort": None},
+                "y": {"field": "row", "type": "ordinal", "title": cols["row"], "sort": None},
+                "color": {
+                    "field": "value",
+                    "type": "quantitative",
+                    "title": cols["value"],
+                    "scale": {"scheme": "viridis"},
+                },
             },
         }
         return self._result(spec, ("row", "col", "value"), rows, truncated, ms)

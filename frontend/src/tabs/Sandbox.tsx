@@ -2,7 +2,8 @@ import { useState } from "react";
 import Editor from "@monaco-editor/react";
 import { api } from "../api/client";
 import type { SandboxRunResult } from "../api/types";
-import { Badge, Button, Card, ErrorBox, PageTitle } from "../components/ui";
+import { Badge, Button, Card, EmptyState, ErrorBox, PageTitle } from "../components/ui";
+import { BeakerIcon, PlayIcon, ShieldIcon } from "../components/icons";
 
 const STARTER = `# You have a read/write COPY of your data in 'con' (a DuckDB connection).
 # pandas (pd), numpy (np), matplotlib (plt) and scikit-learn are available.
@@ -62,22 +63,28 @@ export function Sandbox() {
     <div>
       <PageTitle title="Sandbox" subtitle="Run Python experiments against a disposable copy." />
 
-      <div className="mb-4 rounded-lg border border-blue-200 bg-blue-50 px-4 py-3 text-sm text-blue-800">
-        🛡️ You are working on a copy of your data. No changes will affect your original dataset.
+      <div className="mb-5 flex items-start gap-2.5 rounded-xl border border-sky-200 bg-sky-50 px-4 py-3 text-sm text-sky-900">
+        <ShieldIcon className="mt-0.5 h-5 w-5 shrink-0 text-sky-600" />
+        <span>
+          You are working on a <strong>copy</strong> of your data. Nothing you run here can
+          affect your original dataset.
+        </span>
       </div>
 
       {!sandboxId ? (
-        <Card>
-          <p className="mb-4 text-sm text-slate-600">
-            Create a sandbox to get an isolated, writable copy of your warehouse.
-          </p>
-          <Button onClick={createSandbox}>Create sandbox</Button>
+        <>
+          <EmptyState
+            icon={<BeakerIcon className="h-10 w-10" />}
+            title="Start a sandbox"
+            body="Get an isolated, writable copy of your warehouse to run Python experiments against."
+            action={<Button onClick={createSandbox}>Create sandbox</Button>}
+          />
           {error && (
             <div className="mt-4">
               <ErrorBox message={error} />
             </div>
           )}
-        </Card>
+        </>
       ) : (
         <div className="space-y-4">
           <div className="flex items-center justify-between">
@@ -86,7 +93,7 @@ export function Sandbox() {
             </div>
             <div className="flex gap-2">
               <Button onClick={run} disabled={running}>
-                {running ? "Running…" : "▶ Run"}
+                <PlayIcon className="h-4 w-4" /> {running ? "Running…" : "Run"}
               </Button>
               <Button variant="danger" onClick={destroy}>
                 Destroy

@@ -5,13 +5,13 @@ Regenerate with `python samples/generate_samples.py`.
 
 | File | Rows | What it's good for |
 |------|-----:|--------------------|
-| `compounds.csv` | 12 | **Biopack** (SMILES/gene/dose), bar/scatter, agent questions |
-| `plate_assay.csv` | 192 | **Heatmap** (plate row × column), dimension inference |
-| `dose_response.csv` | 162 | **Dose-response curves** (log-x), grouped stats |
-| `patients.csv` | 240 | **Bar/histogram**, t-tests, responder analysis |
-| `gene_expression.csv` | 120 | Long/tidy format, bar by gene, treated-vs-control stats |
-| `measurements.csv` | 2000 | **Scatter** + **pagination** (large table) |
-| `edge_cases.csv` | 4 | Proves **verbatim storage** — nothing gets "cleaned" |
+| `compounds.csv` | 255 | **Biopack** (SMILES/gene/dose) + a compound dimension, bar/scatter, agent questions |
+| `plate_assay.csv` | 288 | **Heatmap** (plate row × column), dimension inference |
+| `dose_response.csv` | 288 | **Dose-response curves** (log-x), grouped stats |
+| `patients.csv` | 360 | **Bar/histogram**, t-tests, responder analysis |
+| `gene_expression.csv` | 320 | Long/tidy format, bar by gene, treated-vs-control stats |
+| `measurements.csv` | 2500 | **Scatter** + **pagination** (large table) |
+| `edge_cases.csv` | 200 | Proves **verbatim storage** — nothing gets "cleaned" |
 
 ## Things to try
 

@@ -106,6 +106,36 @@ def test_scatter(assay_root):
     assert all(isinstance(d["x"], float) for d in out.data)
 
 
+def test_heatmap_columns_order_numerically(assay_root):
+    # well_col is stored as text "1".."3"; the heatmap must order it numerically,
+    # not lexically (which would give 1, 10, 11, ... in a real plate).
+    root, section = assay_root
+    with VisualizationService.open(root) as viz:
+        out = viz.visualize(
+            ChartRequest(
+                type="heatmap", section=section, table="raw",
+                row="well_row", col="well_col", value="response",
+            )
+        )
+    seen = []
+    for d in out.data:
+        if d["col"] not in seen:
+            seen.append(d["col"])
+    assert seen == ["1", "2", "3"]
+    assert out.spec["encoding"]["x"]["sort"] is None
+
+
+def test_blank_column_role_treated_as_unset(assay_root):
+    # An empty-string optional role must not be treated as a column name.
+    root, section = assay_root
+    with VisualizationService.open(root) as viz:
+        out = viz.visualize(
+            ChartRequest(type="scatter", section=section, table="raw", x="dose", y="response", color="")
+        )
+    assert out.spec["mark"] == "point"
+    assert "color" not in out.spec["encoding"]
+
+
 def test_missing_required_column_raises(assay_root):
     root, section = assay_root
     with VisualizationService.open(root) as viz:
