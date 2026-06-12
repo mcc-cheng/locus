@@ -15,12 +15,14 @@ from __future__ import annotations
 import shutil
 import tempfile
 import threading
+from contextlib import asynccontextmanager
 from pathlib import Path
+from typing import Literal
 
 from fastapi import FastAPI, File, Form, Request, UploadFile
 from pydantic import BaseModel
 
-from executor import SandboxManager
+from executor import SandboxLimits, SandboxManager, SandboxRunResult, run_notebook, run_script
 from ingest import (
     AgenticIngestor,
     BiopackError,
@@ -49,6 +51,15 @@ class QueryBody(BaseModel):
     timeout_s: float | None = None
 
 
+class SandboxRunBody(BaseModel):
+    kind: Literal["script", "notebook"] = "script"
+    code: str | None = None  # for kind="script"
+    notebook: dict | None = None  # for kind="notebook"
+    timeout_s: float | None = None
+    cpu_seconds: int | None = None
+    memory_mb: int | None = None
+
+
 class AppState:
     def __init__(self, root: str | Path) -> None:
         self.root = Path(root)
@@ -57,11 +68,18 @@ class AppState:
         Warehouse.open(self.root).close()
         self.lock = threading.Lock()
         self.sandboxes = SandboxManager(self.root)
+        self.sandbox_results: dict[str, SandboxRunResult] = {}
 
 
 def create_app(root: str | Path) -> FastAPI:
-    app = FastAPI(title="Locus API", version="0.1.0")
     state = AppState(root)
+
+    @asynccontextmanager
+    async def lifespan(_app: FastAPI):
+        yield
+        state.sandboxes.destroy_all()  # session end: discard all sandboxes
+
+    app = FastAPI(title="Locus API", version="0.1.0", lifespan=lifespan)
     app.state.locus = state
 
     # ---- exception handlers: everything becomes an envelope ----
@@ -193,11 +211,49 @@ def create_app(root: str | Path) -> FastAPI:
             handle = state.sandboxes.create()
         return ok({"sandbox_id": handle.id}, status_code=201)
 
+    @app.post("/sandboxes/{sandbox_id}/run")
+    def run_sandbox(sandbox_id: str, body: SandboxRunBody):
+        handle = state.sandboxes.get(sandbox_id)
+        if handle is None:
+            return err(f"no sandbox {sandbox_id!r}", status_code=404)
+        overrides = {
+            k: v
+            for k, v in {
+                "timeout_s": body.timeout_s,
+                "cpu_seconds": body.cpu_seconds,
+                "memory_mb": body.memory_mb,
+            }.items()
+            if v is not None
+        }
+        limits = SandboxLimits(**overrides)
+        # Sandbox runs touch only the isolated clone, so they do NOT take the
+        # warehouse lock — a long experiment never blocks schema/query/ingest.
+        if body.kind == "script":
+            if body.code is None:
+                return err("a script run requires 'code'", status_code=400)
+            result = run_script(handle, body.code, limits=limits)
+        else:
+            if body.notebook is None:
+                return err("a notebook run requires 'notebook'", status_code=400)
+            result = run_notebook(handle, body.notebook, limits=limits)
+        state.sandbox_results[sandbox_id] = result
+        return ok(result)
+
+    @app.get("/sandboxes/{sandbox_id}/results")
+    def sandbox_results(sandbox_id: str):
+        if state.sandboxes.get(sandbox_id) is None:
+            return err(f"no sandbox {sandbox_id!r}", status_code=404)
+        result = state.sandbox_results.get(sandbox_id)
+        if result is None:
+            return err("sandbox has no run results yet", status_code=404)
+        return ok(result)
+
     @app.delete("/sandboxes/{sandbox_id}")
     def delete_sandbox(sandbox_id: str):
         deleted = state.sandboxes.delete(sandbox_id)
         if not deleted:
             return err(f"no sandbox {sandbox_id!r}", status_code=404)
+        state.sandbox_results.pop(sandbox_id, None)
         return ok({"deleted": sandbox_id})
 
     return app

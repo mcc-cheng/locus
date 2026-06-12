@@ -28,6 +28,7 @@ experiments = [
     "pandas>=2.2",
     "matplotlib>=3.8",
     "papermill>=2.6",
+    "ipykernel>=6.29",
 ]
 dev = [
     "pytest>=8.0",

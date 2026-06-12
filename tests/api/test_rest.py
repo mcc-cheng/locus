@@ -110,6 +110,41 @@ def test_sandbox_lifecycle(client):
     assert client.delete(f"/sandboxes/{sandbox_id}").status_code == 404
 
 
+def test_sandbox_run_script_and_results(client):
+    _ingest(client)
+    sid = client.post("/sandboxes").json()["data"]["sandbox_id"]
+
+    run = client.post(
+        f"/sandboxes/{sid}/run",
+        json={"kind": "script", "code": "print('HELLO_SANDBOX'); con.execute('CREATE TABLE t AS SELECT 1')"},
+    )
+    assert run.status_code == 200, run.text
+    body = run.json()["data"]
+    assert body["ok"] is True
+    assert "HELLO_SANDBOX" in body["stdout"]
+
+    # results endpoint returns the latest run
+    results = client.get(f"/sandboxes/{sid}/results").json()
+    assert results["data"]["run_id"] == body["run_id"]
+
+    client.delete(f"/sandboxes/{sid}")
+    # results gone after delete
+    assert client.get(f"/sandboxes/{sid}/results").status_code == 404
+
+
+def test_sandbox_run_requires_code(client):
+    _ingest(client)
+    sid = client.post("/sandboxes").json()["data"]["sandbox_id"]
+    r = client.post(f"/sandboxes/{sid}/run", json={"kind": "script"})
+    assert r.status_code == 400
+    assert r.json()["ok"] is False
+
+
+def test_run_on_unknown_sandbox_404(client):
+    r = client.post("/sandboxes/nope/run", json={"kind": "script", "code": "print(1)"})
+    assert r.status_code == 404
+
+
 def test_envelope_shape_is_consistent(client):
     # success and error responses both carry ok/data/error keys
     for resp in [client.get("/health"), client.get("/schema/nope")]:
