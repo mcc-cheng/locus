@@ -20,8 +20,11 @@ from pathlib import Path
 from typing import Literal
 
 from fastapi import FastAPI, File, Form, Request, UploadFile
+from fastapi.encoders import jsonable_encoder
+from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 
+from agentic import AnalystAgent, OllamaBrain
 from executor import SandboxLimits, SandboxManager, SandboxRunResult, run_notebook, run_script
 from ingest import (
     AgenticIngestor,
@@ -51,6 +54,11 @@ class QueryBody(BaseModel):
     timeout_s: float | None = None
 
 
+class AgentChatBody(BaseModel):
+    message: str
+    history: list[dict] = []  # full conversation passed each request; no server session
+
+
 class SandboxRunBody(BaseModel):
     kind: Literal["script", "notebook"] = "script"
     code: str | None = None  # for kind="script"
@@ -61,7 +69,7 @@ class SandboxRunBody(BaseModel):
 
 
 class AppState:
-    def __init__(self, root: str | Path) -> None:
+    def __init__(self, root: str | Path, brain_factory=None) -> None:
         self.root = Path(root)
         self.root.mkdir(parents=True, exist_ok=True)
         # Ensure the canonical file exists so read services can open it.
@@ -69,10 +77,12 @@ class AppState:
         self.lock = threading.Lock()
         self.sandboxes = SandboxManager(self.root)
         self.sandbox_results: dict[str, SandboxRunResult] = {}
+        # Factory for the agent's brain; overridable for tests.
+        self.brain_factory = brain_factory or OllamaBrain
 
 
-def create_app(root: str | Path) -> FastAPI:
-    state = AppState(root)
+def create_app(root: str | Path, *, brain_factory=None) -> FastAPI:
+    state = AppState(root, brain_factory=brain_factory)
 
     @asynccontextmanager
     async def lifespan(_app: FastAPI):
@@ -247,6 +257,38 @@ def create_app(root: str | Path) -> FastAPI:
         if result is None:
             return err("sandbox has no run results yet", status_code=404)
         return ok(result)
+
+    # ---- agent chat (streaming NDJSON; no server-side session state) ----
+    @app.post("/agent/chat")
+    def agent_chat(body: AgentChatBody):
+        def _line(obj) -> str:
+            import json
+
+            return json.dumps(jsonable_encoder(obj)) + "\n"
+
+        def stream():
+            with state.lock:
+                agent = AnalystAgent(
+                    state.root, state.brain_factory(), sandbox_manager=state.sandboxes
+                )
+                try:
+                    resp = agent.handle(body.message, body.history)
+                except OllamaUnavailableError as exc:
+                    yield _line({"type": "error", "error": str(exc)})
+                    return
+            # Staged events: the action used, its result, then the message.
+            yield _line(
+                {
+                    "type": "action",
+                    "action_type": resp.action_type,
+                    "sql": resp.sql,
+                    "spec": resp.spec,
+                }
+            )
+            yield _line({"type": "result", "result": resp.result})
+            yield _line({"type": "message", "response": resp.response, "error": resp.error})
+
+        return StreamingResponse(stream(), media_type="application/x-ndjson")
 
     @app.delete("/sandboxes/{sandbox_id}")
     def delete_sandbox(sandbox_id: str):
