@@ -1,0 +1,13 @@
+compound_id,compound_name,smiles,target_gene,dose,mol_weight,logp
+C001,Aspirin,CC(=O)Oc1ccccc1C(=O)O,PTGS2,10 mg,91.0,0.43
+C002,Caffeine,Cn1cnc2c1c(=O)n(C)c(=O)n2C,ADORA2A,25 mg,141.4,-0.78
+C003,Benzene,C1=CC=CC=C1,CYP2E1,2.5 mg/kg,118.25,1.45
+C004,Ethanol,OCC,ADH1B,10 mg,121.23,0.13
+C005,Ibuprofen,CC(C)Cc1ccc(C(C)C(=O)O)cc1,PTGS1,2.5 mg/kg,91.68,-0.11
+C006,Paracetamol,CC(=O)Nc1ccc(O)cc1,PTGS2,2.5 mg/kg,264.59,1.64
+C007,Toluene,C1=CC=CC=C1C,CYP2E1,5 mg/kg,436.15,-1.45
+C008,Phenol,Oc1ccccc1,CYP2E1,25 mg,387.18,0.88
+C009,Nicotine,CN1CCCC1c1cccnc1,CHRNA4,25 mg,174.74,3.84
+C010,Imatinib,Cc1ccc(NC(=O)c2ccc(CN3CCN(C)CC3)cc2)cc1Nc1nccc(-c2cccnc2)n1,ABL1,10 mg,120.81,-0.82
+C011,Gefitinib,COc1cc2ncnc(Nc3ccc(F)c(Cl)c3)c2cc1OCCCN1CCOCC1,EGFR,5 mg/kg,345.64,4.15
+C012,Acetone,CC(C)=O,ADH1B,100 mg,315.94,5.31

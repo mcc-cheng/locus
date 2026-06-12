@@ -1,0 +1,5 @@
+record_id,zip_code,decimal,scientific,flag,note,amount
+1,00123,1.0,1e3,TRUE,hello,"$1,000"
+2,007,1.00,1E3,True,"a, b, c","$2,500.00"
+3,42,001,2.5e-1,false,"line with ""quotes""",$0.99
+4,90210,3.14159,6.022E23,FALSE,,$10
