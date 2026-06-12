@@ -165,6 +165,7 @@ class AnalystAgent:
             action_type="chart",
             spec=out.spec,
             result={"data": out.data, "row_count": out.row_count, "truncated": out.truncated},
+            chart_request=req.model_dump(),
         )
 
     def _do_stat_test(self, action: StatTestAction, narration: str) -> AgentResponse:

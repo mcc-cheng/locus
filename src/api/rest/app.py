@@ -21,7 +21,7 @@ from typing import Literal
 
 from fastapi import FastAPI, File, Form, Request, UploadFile
 from fastapi.encoders import jsonable_encoder
-from fastapi.responses import StreamingResponse
+from fastapi.responses import FileResponse, StreamingResponse
 from pydantic import BaseModel
 
 from agentic import AnalystAgent, OllamaBrain
@@ -249,6 +249,19 @@ def create_app(root: str | Path, *, brain_factory=None) -> FastAPI:
         state.sandbox_results[sandbox_id] = result
         return ok(result)
 
+    @app.get("/sandboxes/{sandbox_id}/artifacts/{run_id}/{name}")
+    def sandbox_artifact(sandbox_id: str, run_id: str, name: str):
+        handle = state.sandboxes.get(sandbox_id)
+        if handle is None:
+            return err(f"no sandbox {sandbox_id!r}", status_code=404)
+        # Prevent path traversal; only plain filenames within the run dir.
+        if any(bad in part for part in (run_id, name) for bad in ("/", "\\", "..")):
+            return err("invalid artifact path", status_code=400)
+        path = handle.outputs_dir / run_id / name
+        if not path.is_file():
+            return err("artifact not found", status_code=404)
+        return FileResponse(path)
+
     @app.get("/sandboxes/{sandbox_id}/results")
     def sandbox_results(sandbox_id: str):
         if state.sandboxes.get(sandbox_id) is None:
@@ -283,6 +296,7 @@ def create_app(root: str | Path, *, brain_factory=None) -> FastAPI:
                     "action_type": resp.action_type,
                     "sql": resp.sql,
                     "spec": resp.spec,
+                    "chart_request": resp.chart_request,
                 }
             )
             yield _line({"type": "result", "result": resp.result})

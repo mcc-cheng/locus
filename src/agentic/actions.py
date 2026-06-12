@@ -95,3 +95,6 @@ class AgentResponse(BaseModel):
     spec: dict[str, Any] | None = None
     result: Any = None
     error: str | None = None
+    # For chart actions: the request that produced the spec, so the UI can
+    # re-open it in the Visualize tab.
+    chart_request: dict[str, Any] | None = None
