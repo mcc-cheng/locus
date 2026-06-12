@@ -63,7 +63,15 @@ def run(
     if pf:
         Path(pf).write_text(str(port), encoding="utf-8")
 
-    uvicorn.run(app, host=host, port=port, log_level="warning")
+    print(
+        f"Locus engine running at http://{host}:{port}  (data dir: {data_dir})\n"
+        f"  • health:   http://{host}:{port}/health\n"
+        f"  • API docs: http://{host}:{port}/docs\n"
+        "Leave this running and start the UI in another terminal "
+        "(npm --prefix frontend run dev). Press Ctrl+C to stop.",
+        flush=True,
+    )
+    uvicorn.run(app, host=host, port=port, log_level="info")
 
 
 def _dispatch_sandbox(argv: list[str]) -> int:
