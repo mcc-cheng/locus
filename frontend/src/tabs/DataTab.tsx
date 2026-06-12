@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import { api } from "../api/client";
 import type { DatasetSummary, QueryResult, SectionManifest } from "../api/types";
 import { useApp } from "../store";
-import { Badge, Button, Card, ErrorBox, PageTitle, Spinner } from "../components/ui";
+import { Badge, Button, Card, ErrorBox, PageTitle, Skeleton } from "../components/ui";
 
 const PAGE_SIZE = 50;
 
@@ -126,7 +126,14 @@ export function DataTab() {
       <div className="min-w-0 flex-1">
         {error && <ErrorBox message={error} />}
         {!selectedSection && <p className="text-sm text-slate-500">Select a dataset.</p>}
-        {selectedSection && !result && !error && <Spinner />}
+        {selectedSection && !result && !error && (
+          <Card>
+            <Skeleton className="mb-3 h-8 w-64" />
+            {Array.from({ length: 8 }).map((_, i) => (
+              <Skeleton key={i} className="mb-2 h-6 w-full" />
+            ))}
+          </Card>
+        )}
         {result && (
           <Card>
             <div className="mb-3 flex items-center justify-between gap-3">
@@ -157,9 +164,9 @@ export function DataTab() {
                 </thead>
                 <tbody>
                   {filtered.map((r, i) => (
-                    <tr key={i} className="border-b border-slate-100">
+                    <tr key={i} className="border-b border-slate-100 odd:bg-slate-50/40 hover:bg-indigo-50/40">
                       {r.map((c, j) => (
-                        <td key={j} className="px-2 py-1 text-slate-700">
+                        <td key={j} className="px-2 py-1.5 text-slate-700">
                           {c === null ? <span className="text-slate-300">∅</span> : String(c)}
                         </td>
                       ))}

@@ -37,6 +37,10 @@ export function ErrorBox({ message }: { message: string }) {
   );
 }
 
+export function Skeleton({ className = "" }: { className?: string }) {
+  return <div className={`skeleton rounded-lg ${className}`} />;
+}
+
 export function Spinner({ label }: { label?: string }) {
   return (
     <div className="flex items-center gap-2 text-sm text-slate-500">

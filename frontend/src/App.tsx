@@ -14,6 +14,7 @@ import {
   HomeIcon,
   UploadIcon,
 } from "./components/icons";
+import { StatusBar } from "./components/StatusBar";
 
 const TABS: { id: Tab; label: string; Icon: ComponentType<{ className?: string }> }[] = [
   { id: "home", label: "Home", Icon: HomeIcon },
@@ -44,13 +45,16 @@ export function App() {
             <li key={id}>
               <button
                 onClick={() => setTab(id)}
-                className={`group flex w-full items-center gap-3 rounded-lg px-3 py-2 text-left text-sm font-medium transition ${
+                className={`group relative flex w-full items-center gap-3 rounded-lg px-3 py-2 text-left text-sm font-medium transition ${
                   tab === id
                     ? "bg-indigo-50 text-indigo-700"
                     : "text-slate-600 hover:bg-slate-100 hover:text-slate-900"
                 }`}
               >
-                <Icon className={`h-5 w-5 ${tab === id ? "text-indigo-600" : "text-slate-400"}`} />
+                {tab === id && (
+                  <span className="absolute left-0 top-1/2 h-5 w-1 -translate-y-1/2 rounded-r-full bg-indigo-600" />
+                )}
+                <Icon className={`h-5 w-5 ${tab === id ? "text-indigo-600" : "text-slate-400 group-hover:text-slate-500"}`} />
                 {label}
               </button>
             </li>
@@ -63,8 +67,9 @@ export function App() {
       </nav>
 
       {/* Main content */}
-      <main className="min-w-0 flex-1 overflow-auto">
-        <div className="mx-auto max-w-5xl px-10 py-9">
+      <main className="flex min-w-0 flex-1 flex-col overflow-auto">
+        <StatusBar />
+        <div className="mx-auto w-full max-w-5xl px-10 py-9">
           <div key={tab} className="animate-in">
             {tab === "home" && <Home />}
             {tab === "upload" && <Upload />}

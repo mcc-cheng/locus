@@ -3,6 +3,7 @@ import { api } from "../api/client";
 import type { IngestResult } from "../api/types";
 import { useApp } from "../store";
 import { Badge, Button, Card, ErrorBox, PageTitle } from "../components/ui";
+import { UploadIcon } from "../components/icons";
 
 const BIOPACK_WARNING =
   "This will normalize SMILES strings and parse gene/dose columns. " +
@@ -89,14 +90,23 @@ export function Upload() {
           if (f) choose(f);
         }}
         onClick={() => fileRef.current?.click()}
-        className={`flex h-40 cursor-pointer flex-col items-center justify-center rounded-xl border-2 border-dashed transition ${
-          dragging ? "border-indigo-500 bg-indigo-50" : "border-slate-300 bg-slate-50"
+        className={`flex h-48 cursor-pointer flex-col items-center justify-center gap-3 rounded-2xl border-2 border-dashed transition ${
+          dragging
+            ? "border-indigo-500 bg-indigo-50 scale-[1.01]"
+            : "border-slate-300 bg-white/60 hover:border-indigo-300 hover:bg-slate-50"
         }`}
       >
-        <div className="text-sm font-medium text-slate-600">
-          Drag &amp; drop a CSV here, or click to browse
+        <div
+          className={`flex h-12 w-12 items-center justify-center rounded-xl transition ${
+            dragging ? "bg-indigo-100 text-indigo-600" : "bg-slate-100 text-slate-400"
+          }`}
+        >
+          <UploadIcon className="h-6 w-6" />
         </div>
-        {file && <div className="mt-2 text-xs text-slate-500">{file.name}</div>}
+        <div className="text-sm font-medium text-slate-600">
+          Drag &amp; drop a CSV here, or <span className="text-indigo-600">browse</span>
+        </div>
+        {file && <Badge tone="indigo">{file.name}</Badge>}
         <input
           ref={fileRef}
           type="file"
