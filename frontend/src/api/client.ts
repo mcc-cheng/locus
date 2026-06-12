@@ -7,6 +7,7 @@ import type {
   Envelope,
   IngestResult,
   QueryResult,
+  RowPage,
   SandboxRunResult,
   SectionManifest,
   VisualizationResult,
@@ -61,6 +62,30 @@ export const api = {
   async deleteDataset(section: string): Promise<{ deleted: string }> {
     return unwrap<{ deleted: string }>(
       await fetch(`${API_BASE}/schema/${encodeURIComponent(section)}`, { method: "DELETE" }),
+    );
+  },
+
+  // ---- editable rows ----
+  readRows: (section: string, offset = 0, limit = 100) =>
+    getJSON<RowPage>(
+      `/datasets/${encodeURIComponent(section)}/rows?offset=${offset}&limit=${limit}`,
+    ),
+  addRow: (section: string, values: Record<string, string | null> = {}) =>
+    postJSON<{ rid: number }>(`/datasets/${encodeURIComponent(section)}/rows`, { values }),
+  async patchCell(section: string, rid: number, column: string, value: string | null) {
+    return unwrap<{ rid: number; column: string }>(
+      await fetch(`${API_BASE}/datasets/${encodeURIComponent(section)}/rows/${rid}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ column, value }),
+      }),
+    );
+  },
+  async deleteRow(section: string, rid: number) {
+    return unwrap<{ deleted: number }>(
+      await fetch(`${API_BASE}/datasets/${encodeURIComponent(section)}/rows/${rid}`, {
+        method: "DELETE",
+      }),
     );
   },
 

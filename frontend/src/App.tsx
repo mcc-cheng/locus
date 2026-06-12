@@ -10,8 +10,10 @@ import {
   BeakerIcon,
   ChartIcon,
   ChatIcon,
+  ChevronLeft,
   DataIcon,
   HomeIcon,
+  MenuIcon,
   UploadIcon,
 } from "./components/icons";
 import { StatusBar } from "./components/StatusBar";
@@ -25,45 +27,76 @@ const TABS: { id: Tab; label: string; Icon: ComponentType<{ className?: string }
 ];
 
 export function App() {
-  const { tab, setTab, panelCollapsed, setPanelCollapsed } = useApp();
+  const { tab, setTab, panelCollapsed, setPanelCollapsed, navCollapsed, setNavCollapsed } = useApp();
 
   return (
     <div className="flex h-full w-full overflow-hidden">
-      {/* Left navigation */}
-      <nav className="flex w-[216px] shrink-0 flex-col border-r border-slate-200 bg-white">
-        <div className="flex items-center gap-2.5 px-5 py-5">
-          <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-gradient-to-br from-indigo-500 to-violet-600 text-sm font-bold text-white shadow-sm">
+      {/* Left navigation (collapsible) */}
+      <nav
+        className={`flex shrink-0 flex-col border-r border-slate-200 bg-white transition-all duration-200 ${
+          navCollapsed ? "w-16" : "w-[216px]"
+        }`}
+      >
+        <div className={`flex items-center py-5 ${navCollapsed ? "justify-center px-0" : "gap-2.5 px-5"}`}>
+          <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-gradient-to-br from-indigo-500 to-violet-600 text-sm font-bold text-white shadow-sm">
             L
           </div>
-          <div>
-            <div className="text-[15px] font-semibold leading-tight text-slate-900">Locus</div>
-            <div className="text-[11px] leading-tight text-slate-400">Data Aggregator</div>
-          </div>
+          {!navCollapsed && (
+            <>
+              <div className="flex-1">
+                <div className="text-[15px] font-semibold leading-tight text-slate-900">Locus</div>
+                <div className="text-[11px] leading-tight text-slate-400">Data Aggregator</div>
+              </div>
+              <button
+                onClick={() => setNavCollapsed(true)}
+                title="Collapse sidebar"
+                className="rounded-lg p-1.5 text-slate-400 hover:bg-slate-100 hover:text-slate-600"
+              >
+                <ChevronLeft className="h-4 w-4" />
+              </button>
+            </>
+          )}
         </div>
-        <ul className="flex-1 space-y-0.5 px-3 pt-2">
+
+        {navCollapsed && (
+          <button
+            onClick={() => setNavCollapsed(false)}
+            title="Expand sidebar"
+            className="mx-auto mb-1 rounded-lg p-2 text-slate-400 hover:bg-slate-100 hover:text-slate-600"
+          >
+            <MenuIcon className="h-5 w-5" />
+          </button>
+        )}
+
+        <ul className={`flex-1 space-y-0.5 pt-2 ${navCollapsed ? "px-2" : "px-3"}`}>
           {TABS.map(({ id, label, Icon }) => (
             <li key={id}>
               <button
                 onClick={() => setTab(id)}
-                className={`group relative flex w-full items-center gap-3 rounded-lg px-3 py-2 text-left text-sm font-medium transition ${
+                title={navCollapsed ? label : undefined}
+                className={`group relative flex w-full items-center rounded-lg text-left text-sm font-medium transition ${
+                  navCollapsed ? "justify-center px-0 py-2.5" : "gap-3 px-3 py-2"
+                } ${
                   tab === id
                     ? "bg-indigo-50 text-indigo-700"
                     : "text-slate-600 hover:bg-slate-100 hover:text-slate-900"
                 }`}
               >
-                {tab === id && (
+                {tab === id && !navCollapsed && (
                   <span className="absolute left-0 top-1/2 h-5 w-1 -translate-y-1/2 rounded-r-full bg-indigo-600" />
                 )}
                 <Icon className={`h-5 w-5 ${tab === id ? "text-indigo-600" : "text-slate-400 group-hover:text-slate-500"}`} />
-                {label}
+                {!navCollapsed && label}
               </button>
             </li>
           ))}
         </ul>
-        <div className="flex items-center gap-2 px-5 py-4 text-[11px] text-slate-400">
-          <span className="h-1.5 w-1.5 rounded-full bg-emerald-400" />
-          Non-destructive by design
-        </div>
+        {!navCollapsed && (
+          <div className="flex items-center gap-2 px-5 py-4 text-[11px] text-slate-400">
+            <span className="h-1.5 w-1.5 rounded-full bg-emerald-400" />
+            Non-destructive by design
+          </div>
+        )}
       </nav>
 
       {/* Main content — full width; narrow tabs self-constrain. */}

@@ -42,7 +42,8 @@ from services import (
     ServiceError,
     VisualizationService,
 )
-from warehouse import SectionNotFoundError, Warehouse
+from warehouse import CanonicalDB, SectionNotFoundError, Warehouse
+from warehouse import rows as row_ops
 
 from .envelopes import err, ok
 
@@ -57,6 +58,15 @@ class QueryBody(BaseModel):
 class AgentChatBody(BaseModel):
     message: str
     history: list[dict] = []  # full conversation passed each request; no server session
+
+
+class RowAppendBody(BaseModel):
+    values: dict[str, str | None] = {}
+
+
+class CellPatchBody(BaseModel):
+    column: str
+    value: str | None = None
 
 
 class SandboxRunBody(BaseModel):
@@ -152,6 +162,47 @@ def create_app(root: str | Path, *, brain_factory=None) -> FastAPI:
     def schema_section(section: str):
         with state.lock, SchemaService.open(state.root) as svc:
             return ok(svc.get_dataset(section))
+
+    # ---- editable rows (the data store) ---------------------------------
+    @app.get("/datasets/{section}/rows")
+    def read_rows(section: str, offset: int = 0, limit: int = 100):
+        limit = max(1, min(limit, 1000))
+        with state.lock, CanonicalDB.open(state.root) as db:
+            return ok(row_ops.read_rows(db.con, section, offset=offset, limit=limit))
+
+    @app.post("/datasets/{section}/rows")
+    def add_row(section: str, body: RowAppendBody):
+        with state.lock:
+            wh = Warehouse.open(state.root, verify_sources=False)
+            try:
+                rid = row_ops.append_row(wh.con, section, body.values)
+            finally:
+                wh.close()
+        return ok({"rid": rid}, status_code=201)
+
+    @app.patch("/datasets/{section}/rows/{rid}")
+    def patch_cell(section: str, rid: int, body: CellPatchBody):
+        with state.lock:
+            wh = Warehouse.open(state.root, verify_sources=False)
+            try:
+                row_ops.update_cell(wh.con, section, rid, body.column, body.value)
+            except KeyError:
+                return err(f"no column {body.column!r}", status_code=400)
+            finally:
+                wh.close()
+        return ok({"rid": rid, "column": body.column})
+
+    @app.delete("/datasets/{section}/rows/{rid}")
+    def delete_row(section: str, rid: int):
+        with state.lock:
+            wh = Warehouse.open(state.root, verify_sources=False)
+            try:
+                deleted = row_ops.delete_row(wh.con, section, rid)
+            finally:
+                wh.close()
+        if not deleted:
+            return err(f"no row {rid}", status_code=404)
+        return ok({"deleted": rid})
 
     @app.delete("/schema/{section}")
     def delete_dataset(section: str):

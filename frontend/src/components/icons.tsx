@@ -85,6 +85,29 @@ export const PlayIcon = ({ className }: P) => (
     <path d="M7 4.5v15l12-7.5-12-7.5Z" />
   </svg>
 );
+export const MenuIcon = ({ className }: P) => (
+  <svg {...base(className)}>
+    <path d="M4 6h16M4 12h16M4 18h16" />
+  </svg>
+);
+export const ChevronLeft = ({ className }: P) => (
+  <svg {...base(className)}>
+    <path d="m15 6-6 6 6 6" />
+  </svg>
+);
+export const PlusIcon = ({ className }: P) => (
+  <svg {...base(className)}>
+    <path d="M12 5v14M5 12h14" />
+  </svg>
+);
+export const TrashIcon = ({ className }: P) => (
+  <svg {...base(className)}>
+    <path d="M4 7h16" />
+    <path d="M10 11v6M14 11v6" />
+    <path d="M6 7l1 13h10l1-13" />
+    <path d="M9 7V4h6v3" />
+  </svg>
+);
 export const DownloadIcon = ({ className }: P) => (
   <svg {...base(className)}>
     <path d="M12 4v11" />

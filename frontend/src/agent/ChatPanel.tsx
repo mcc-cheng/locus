@@ -1,6 +1,6 @@
 import { useRef, useState } from "react";
 import { api } from "../api/client";
-import type { ChartRequest, ChatTurn } from "../api/types";
+import type { AgentEvent, ChartRequest, ChatTurn } from "../api/types";
 import { useApp } from "../store";
 import { VegaChart } from "../components/VegaChart";
 import { Markdown } from "../components/Markdown";
@@ -52,11 +52,31 @@ export function ChatPanel({ onCollapse }: { onCollapse: () => void }) {
     );
   }
 
-  function patchLast(fn: (m: AssistantMsg) => void) {
+  // PURE updater: never mutate existing state (React StrictMode double-invokes
+  // updaters in dev — an in-place mutation would apply each event twice).
+  function applyEvent(prev: AssistantMsg, e: AgentEvent): AssistantMsg {
+    const m: AssistantMsg = { ...prev, steps: [...prev.steps], charts: [...prev.charts] };
+    if (e.type === "step") {
+      m.steps.push({ tool: e.tool, thought: e.thought, sql: e.sql, summary: e.summary });
+    } else if (e.type === "chart") {
+      m.charts.push({ spec: e.spec, chartRequest: e.chart_request });
+    } else if (e.type === "token") {
+      m.text += e.text;
+    } else if (e.type === "final") {
+      if (e.response) m.text = e.response;
+      m.done = true;
+    } else if (e.type === "error") {
+      m.text = m.text || e.error;
+      m.error = e.error;
+      m.done = true;
+    }
+    return m;
+  }
+
+  function pushEvent(e: AgentEvent) {
     setMessages((msgs) => {
-      const copy = [...msgs];
-      fn(copy[copy.length - 1] as AssistantMsg);
-      return copy;
+      const last = msgs[msgs.length - 1] as AssistantMsg;
+      return [...msgs.slice(0, -1), applyEvent(last, e)];
     });
   }
 
@@ -76,26 +96,11 @@ export function ChatPanel({ onCollapse }: { onCollapse: () => void }) {
     scrollDown();
     try {
       await api.agentChat(text, history, (e) => {
-        patchLast((last) => {
-          if (e.type === "step") last.steps.push({ tool: e.tool, thought: e.thought, sql: e.sql, summary: e.summary });
-          else if (e.type === "chart") last.charts.push({ spec: e.spec, chartRequest: e.chart_request });
-          else if (e.type === "token") last.text += e.text;
-          else if (e.type === "final") {
-            if (e.response) last.text = e.response;
-            last.done = true;
-          } else if (e.type === "error") {
-            last.text = last.text || e.error;
-            last.error = e.error;
-            last.done = true;
-          }
-        });
+        pushEvent(e);
         scrollDown();
       });
     } catch (err) {
-      patchLast((last) => {
-        last.text = "⚠️ " + String((err as Error).message);
-        last.error = String((err as Error).message);
-      });
+      pushEvent({ type: "error", error: String((err as Error).message) });
     } finally {
       setStreaming(false);
       scrollDown();

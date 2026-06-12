@@ -12,6 +12,8 @@ interface AppState {
   /** The agent panel is always present; this only narrows it to a rail. */
   panelCollapsed: boolean;
   setPanelCollapsed: (b: boolean) => void;
+  navCollapsed: boolean;
+  setNavCollapsed: (b: boolean) => void;
   /** A chart handed off from the agent panel to the Visualize tab. */
   vizHandoff: ChartRequest | null;
   openInVisualize: (req: ChartRequest) => void;
@@ -24,6 +26,7 @@ interface AppState {
 const Ctx = createContext<AppState | null>(null);
 
 const PANEL_KEY = "locus.panelCollapsed";
+const NAV_KEY = "locus.navCollapsed";
 
 export function AppProvider({ children }: { children: ReactNode }) {
   const [tab, setTab] = useState<Tab>("home");
@@ -31,12 +34,19 @@ export function AppProvider({ children }: { children: ReactNode }) {
   const [panelCollapsed, setPanelCollapsedState] = useState<boolean>(
     () => localStorage.getItem(PANEL_KEY) === "1",
   );
+  const [navCollapsed, setNavCollapsedState] = useState<boolean>(
+    () => localStorage.getItem(NAV_KEY) === "1",
+  );
   const [vizHandoff, setVizHandoff] = useState<ChartRequest | null>(null);
   const [schemaVersion, setSchemaVersion] = useState(0);
 
   const setPanelCollapsed = (b: boolean) => {
     setPanelCollapsedState(b);
     localStorage.setItem(PANEL_KEY, b ? "1" : "0");
+  };
+  const setNavCollapsed = (b: boolean) => {
+    setNavCollapsedState(b);
+    localStorage.setItem(NAV_KEY, b ? "1" : "0");
   };
 
   const openDataset = (section: string) => {
@@ -66,6 +76,8 @@ export function AppProvider({ children }: { children: ReactNode }) {
     setSelectedSection,
     panelCollapsed,
     setPanelCollapsed,
+    navCollapsed,
+    setNavCollapsed,
     vizHandoff,
     openInVisualize,
     consumeVizHandoff,

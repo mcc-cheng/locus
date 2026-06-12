@@ -1,230 +1,285 @@
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { api } from "../api/client";
-import type { DatasetSummary, QueryResult, SectionManifest } from "../api/types";
+import type { DataRow, DatasetSummary } from "../api/types";
 import { useApp } from "../store";
-import { Badge, Button, Card, ErrorBox, PageTitle, Skeleton } from "../components/ui";
+import { Badge, Button, ErrorBox, Select, Spinner } from "../components/ui";
+import { PlusIcon, TrashIcon } from "../components/icons";
 
-const PAGE_SIZE = 50;
-
-function quote(id: string): string {
-  return '"' + id.replace(/"/g, '""') + '"';
-}
+const PAGE = 100;
 
 export function DataTab() {
-  const { selectedSection, openDataset, setSelectedSection, refreshSchema, schemaVersion } =
-    useApp();
+  const { selectedSection, setSelectedSection, refreshSchema, schemaVersion } = useApp();
   const [datasets, setDatasets] = useState<DatasetSummary[]>([]);
-  const [manifest, setManifest] = useState<SectionManifest | null>(null);
-  const [table, setTable] = useState<string | null>(null);
-  const [page, setPage] = useState(1);
-  const [result, setResult] = useState<QueryResult | null>(null);
-  const [filter, setFilter] = useState("");
+  const [section, setSection] = useState<string | null>(selectedSection);
+  const [columns, setColumns] = useState<string[]>([]);
+  const [types, setTypes] = useState<Record<string, string>>({});
+  const [rows, setRows] = useState<DataRow[]>([]);
+  const [total, setTotal] = useState(0);
+  const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [editing, setEditing] = useState<{ rid: number; ci: number } | null>(null);
+  const [editValue, setEditValue] = useState("");
+  const [saving, setSaving] = useState(false);
+  const scrollRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     api.schema().then((s) => setDatasets(s.datasets)).catch((e) => setError(String(e.message)));
   }, [schemaVersion]);
 
+  // sync local section with the global selection (e.g. "Open" from Home)
   useEffect(() => {
-    setManifest(null);
-    setTable(null);
-    setResult(null);
-    if (!selectedSection) return;
-    api
-      .schemaSection(selectedSection)
-      .then((m) => {
-        setManifest(m);
-        setTable(m.tables.find((t) => t.name === "raw")?.name ?? m.tables[0]?.name ?? null);
-      })
-      .catch((e) => setError(String(e.message)));
+    if (selectedSection) setSection(selectedSection);
   }, [selectedSection]);
 
-  useEffect(() => {
-    setResult(null);
-    if (!selectedSection || !table) return;
-    setError(null);
-    api
-      .query(`SELECT * FROM ${quote(selectedSection)}.${quote(table)}`, page, PAGE_SIZE)
-      .then(setResult)
-      .catch((e) => setError(String(e.message)));
-  }, [selectedSection, table, page]);
+  const load = useCallback(
+    async (sec: string, reset: boolean) => {
+      setLoading(true);
+      setError(null);
+      try {
+        const offset = reset ? 0 : rows.length;
+        const page = await api.readRows(sec, offset, PAGE);
+        setColumns(page.columns);
+        setTotal(page.total);
+        setRows((prev) => (reset ? page.rows : [...prev, ...page.rows]));
+      } catch (e) {
+        setError(String((e as Error).message ?? e));
+      } finally {
+        setLoading(false);
+      }
+    },
+    [rows.length],
+  );
 
-  const filtered = useMemo(() => {
-    if (!result) return [];
-    if (!filter.trim()) return result.rows;
-    const q = filter.toLowerCase();
-    return result.rows.filter((r) => r.some((c) => String(c ?? "").toLowerCase().includes(q)));
-  }, [result, filter]);
+  // when the dataset changes: reset and load the first page + column types
+  useEffect(() => {
+    if (!section) return;
+    setRows([]);
+    setColumns([]);
+    setTotal(0);
+    load(section, true);
+    api
+      .schemaSection(section)
+      .then((m) => {
+        const raw = m.tables.find((t) => t.name === "raw");
+        setTypes(Object.fromEntries((raw?.columns ?? []).map((c) => [c.name, c.stored_type])));
+      })
+      .catch(() => setTypes({}));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [section]);
+
+  function onScroll() {
+    const el = scrollRef.current;
+    if (!el || loading || rows.length >= total) return;
+    if (el.scrollTop + el.clientHeight >= el.scrollHeight - 320) load(section!, false);
+  }
+
+  function beginEdit(rid: number, ci: number, current: string | null) {
+    setEditing({ rid, ci });
+    setEditValue(current ?? "");
+  }
+
+  async function commitEdit() {
+    if (!editing || !section) return;
+    const { rid, ci } = editing;
+    const col = columns[ci];
+    const row = rows.find((r) => r.rid === rid);
+    const before = row?.cells[ci] ?? "";
+    setEditing(null);
+    if ((before ?? "") === editValue) return;
+    // optimistic update
+    setRows((rs) => rs.map((r) => (r.rid === rid ? { ...r, cells: r.cells.map((c, i) => (i === ci ? editValue : c)) } : r)));
+    try {
+      await api.patchCell(section, rid, col, editValue);
+    } catch (e) {
+      setError(String((e as Error).message ?? e));
+      load(section, true);
+    }
+  }
+
+  async function addRow() {
+    if (!section) return;
+    setSaving(true);
+    try {
+      const { rid } = await api.addRow(section);
+      setRows((rs) => [...rs, { rid, cells: columns.map(() => null) }]);
+      setTotal((t) => t + 1);
+      requestAnimationFrame(() => {
+        scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight, behavior: "smooth" });
+        beginEdit(rid, 0, "");
+      });
+    } catch (e) {
+      setError(String((e as Error).message ?? e));
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  async function removeRow(rid: number) {
+    if (!section) return;
+    setRows((rs) => rs.filter((r) => r.rid !== rid));
+    setTotal((t) => Math.max(0, t - 1));
+    try {
+      await api.deleteRow(section, rid);
+    } catch (e) {
+      setError(String((e as Error).message ?? e));
+      load(section, true);
+    }
+  }
+
+  function exportCsv() {
+    const esc = (v: unknown) => {
+      const s = String(v ?? "");
+      return /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
+    };
+    const lines = [columns.map(esc).join(","), ...rows.map((r) => r.cells.map(esc).join(","))];
+    const blob = new Blob([lines.join("\n")], { type: "text/csv" });
+    const a = document.createElement("a");
+    a.href = URL.createObjectURL(blob);
+    a.download = `${section}.csv`;
+    a.click();
+    URL.revokeObjectURL(a.href);
+  }
 
   async function deleteDataset() {
-    if (!selectedSection) return;
-    const name = manifest?.source_filename ?? selectedSection;
-    if (
-      !window.confirm(
-        `Delete "${name}"? This permanently removes the dataset and its preserved source copy. This cannot be undone.`,
-      )
-    )
+    if (!section) return;
+    const ds = datasets.find((d) => d.name === section);
+    if (!window.confirm(`Delete "${ds?.source_filename ?? section}"? This permanently removes the dataset and its preserved source copy.`))
       return;
     try {
-      await api.deleteDataset(selectedSection);
+      await api.deleteDataset(section);
       setSelectedSection(null);
-      setManifest(null);
-      setTable(null);
-      setResult(null);
+      setSection(null);
+      setRows([]);
+      setColumns([]);
       refreshSchema();
     } catch (e) {
       setError(String((e as Error).message ?? e));
     }
   }
 
-  function exportCsv() {
-    if (!result) return;
-    const esc = (v: unknown) => {
-      const s = String(v ?? "");
-      return /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
-    };
-    const lines = [
-      result.columns.map(esc).join(","),
-      ...filtered.map((r) => r.map(esc).join(",")),
-    ];
-    const blob = new Blob([lines.join("\n")], { type: "text/csv" });
-    const a = document.createElement("a");
-    a.href = URL.createObjectURL(blob);
-    a.download = `${selectedSection}_${table}_p${page}.csv`;
-    a.click();
-    URL.revokeObjectURL(a.href);
-  }
-
-  const typeOf = (col: string) =>
-    manifest?.tables.find((t) => t.name === table)?.columns.find((c) => c.name === col)
-      ?.stored_type ?? "";
-
   return (
-    <div className="flex h-full gap-6">
-      {/* Dataset + table selector */}
-      <aside className="w-56 shrink-0">
-        <PageTitle title="Data" />
-        <div className="space-y-1">
+    <div className="flex h-full flex-col">
+      {/* Toolbar */}
+      <div className="mb-4 flex flex-wrap items-center gap-3">
+        <h1 className="text-[26px] font-semibold tracking-tight text-slate-900">Data</h1>
+        <Select
+          value={section ?? ""}
+          onChange={(v) => {
+            setSection(v);
+            setSelectedSection(v);
+          }}
+          className="ml-1"
+        >
+          <option value="">Select dataset…</option>
           {datasets.map((d) => (
-            <button
-              key={d.name}
-              onClick={() => openDataset(d.name)}
-              className={`block w-full truncate rounded-lg px-3 py-2 text-left text-sm ${
-                d.name === selectedSection
-                  ? "bg-indigo-600 text-white"
-                  : "text-slate-600 hover:bg-slate-100"
-              }`}
-              title={d.source_filename}
-            >
+            <option key={d.name} value={d.name}>
               {d.source_filename}
-            </button>
+            </option>
           ))}
-        </div>
-        {manifest && (
-          <div className="mt-4">
-            <div className="mb-1 text-xs font-semibold uppercase text-slate-400">Tables</div>
-            <div className="space-y-1">
-              {manifest.tables.map((t) => (
-                <button
-                  key={t.name}
-                  onClick={() => {
-                    setTable(t.name);
-                    setPage(1);
-                  }}
-                  className={`flex w-full items-center justify-between rounded px-2 py-1 text-sm ${
-                    t.name === table ? "bg-slate-200 font-medium" : "text-slate-600 hover:bg-slate-100"
-                  }`}
-                >
-                  <span>{t.name}</span>
-                  <span className="text-xs text-slate-400">{t.row_count.toLocaleString()}</span>
-                </button>
-              ))}
+        </Select>
+        {section && (
+          <>
+            <Badge>{total.toLocaleString()} rows</Badge>
+            <div className="ml-auto flex items-center gap-2">
+              <Button variant="primary" size="sm" onClick={addRow} disabled={saving}>
+                <PlusIcon className="h-4 w-4" /> Add row
+              </Button>
+              <Button variant="secondary" size="sm" onClick={exportCsv}>
+                Export CSV
+              </Button>
+              <Button variant="danger" size="sm" onClick={deleteDataset}>
+                Delete dataset
+              </Button>
             </div>
-          </div>
-        )}
-      </aside>
-
-      {/* Table view */}
-      <div className="min-w-0 flex-1">
-        {error && <ErrorBox message={error} />}
-        {!selectedSection && <p className="text-sm text-slate-500">Select a dataset.</p>}
-        {selectedSection && !result && !error && (
-          <Card>
-            <Skeleton className="mb-3 h-8 w-64" />
-            {Array.from({ length: 8 }).map((_, i) => (
-              <Skeleton key={i} className="mb-2 h-6 w-full" />
-            ))}
-          </Card>
-        )}
-        {result && (
-          <Card>
-            <div className="mb-3 flex items-center justify-between gap-3">
-              <input
-                value={filter}
-                onChange={(e) => setFilter(e.target.value)}
-                placeholder="Filter this page…"
-                className="w-64 rounded-lg border border-slate-300 px-3 py-1.5 text-sm"
-              />
-              <div className="flex items-center gap-2 text-sm text-slate-500">
-                <Badge>read-only</Badge>
-                <Button variant="secondary" size="sm" onClick={exportCsv}>
-                  Export CSV
-                </Button>
-                <Button variant="danger" size="sm" onClick={deleteDataset}>
-                  Delete dataset
-                </Button>
-              </div>
-            </div>
-            <div className="max-h-[calc(100vh-280px)] overflow-auto rounded-lg border border-slate-100">
-              <table className="w-full text-xs">
-                <thead className="sticky top-0 z-10 bg-white shadow-[0_1px_0_rgba(226,232,240,1)]">
-                  <tr className="text-left">
-                    {result.columns.map((c) => (
-                      <th key={c} className="px-2.5 py-2">
-                        <div className="font-semibold text-slate-700">{c}</div>
-                        <div className="font-normal text-slate-400">{typeOf(c)}</div>
-                      </th>
-                    ))}
-                  </tr>
-                </thead>
-                <tbody>
-                  {filtered.map((r, i) => (
-                    <tr key={i} className="border-b border-slate-100 odd:bg-slate-50/40 hover:bg-indigo-50/40">
-                      {r.map((c, j) => (
-                        <td key={j} className="px-2 py-1.5 text-slate-700">
-                          {c === null ? <span className="text-slate-300">∅</span> : String(c)}
-                        </td>
-                      ))}
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-            <div className="mt-3 flex items-center justify-between text-sm text-slate-500">
-              <span>
-                Page {page} · {filtered.length} shown
-                {result.has_more ? " · more available" : ""}
-              </span>
-              <div className="flex gap-2">
-                <Button
-                  variant="secondary"
-                  disabled={page <= 1}
-                  onClick={() => setPage((p) => Math.max(1, p - 1))}
-                >
-                  Prev
-                </Button>
-                <Button
-                  variant="secondary"
-                  disabled={!result.has_more}
-                  onClick={() => setPage((p) => p + 1)}
-                >
-                  Next
-                </Button>
-              </div>
-            </div>
-          </Card>
+          </>
         )}
       </div>
+
+      {error && <ErrorBox message={error} />}
+      {!section && <p className="text-sm text-slate-500">Select a dataset to view and edit it.</p>}
+
+      {/* Spreadsheet */}
+      {section && (
+        <div
+          ref={scrollRef}
+          onScroll={onScroll}
+          className="min-h-0 flex-1 overflow-auto rounded-lg border border-slate-200 bg-white"
+        >
+          <table className="w-full border-collapse text-xs">
+            <thead className="sticky top-0 z-10">
+              <tr>
+                <th className="sticky left-0 z-20 w-10 border-b border-r border-slate-200 bg-slate-50" />
+                {columns.map((c) => (
+                  <th
+                    key={c}
+                    className="border-b border-r border-slate-200 bg-slate-50 px-3 py-2 text-left align-top"
+                  >
+                    <div className="font-semibold text-slate-700">{c}</div>
+                    <div className="font-normal text-slate-400">{types[c] ?? ""}</div>
+                  </th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {rows.map((r) => (
+                <tr key={r.rid} className="group hover:bg-indigo-50/30">
+                  <td className="sticky left-0 z-10 border-b border-r border-slate-100 bg-white text-center group-hover:bg-indigo-50/30">
+                    <button
+                      onClick={() => removeRow(r.rid)}
+                      title="Delete row"
+                      className="text-slate-300 opacity-0 transition hover:text-red-500 group-hover:opacity-100"
+                    >
+                      <TrashIcon className="h-4 w-4" />
+                    </button>
+                  </td>
+                  {r.cells.map((cell, ci) => {
+                    const isEditing = editing?.rid === r.rid && editing?.ci === ci;
+                    return (
+                      <td
+                        key={ci}
+                        onClick={() => !isEditing && beginEdit(r.rid, ci, cell)}
+                        className="border-b border-r border-slate-100 px-0 py-0"
+                      >
+                        {isEditing ? (
+                          <input
+                            autoFocus
+                            value={editValue}
+                            onChange={(e) => setEditValue(e.target.value)}
+                            onBlur={commitEdit}
+                            onKeyDown={(e) => {
+                              if (e.key === "Enter") commitEdit();
+                              if (e.key === "Escape") setEditing(null);
+                            }}
+                            className="w-full bg-white px-3 py-1.5 text-xs outline-none ring-2 ring-inset ring-indigo-400"
+                          />
+                        ) : (
+                          <div className="min-h-[28px] cursor-text px-3 py-1.5 text-slate-700">
+                            {cell === null ? (
+                              <span className="text-slate-300">—</span>
+                            ) : (
+                              cell
+                            )}
+                          </div>
+                        )}
+                      </td>
+                    );
+                  })}
+                </tr>
+              ))}
+            </tbody>
+          </table>
+          {loading && (
+            <div className="px-3 py-3">
+              <Spinner label={rows.length ? "Loading more…" : "Loading…"} />
+            </div>
+          )}
+          {!loading && rows.length >= total && total > 0 && (
+            <div className="px-3 py-3 text-center text-xs text-slate-400">
+              {total.toLocaleString()} rows · end of data
+            </div>
+          )}
+        </div>
+      )}
     </div>
   );
 }

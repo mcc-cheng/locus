@@ -95,6 +95,17 @@ export interface IngestResult {
   row_count: number;
 }
 
+export interface DataRow {
+  rid: number;
+  cells: (string | null)[];
+}
+export interface RowPage {
+  columns: string[];
+  rows: DataRow[];
+  total: number;
+  offset: number;
+}
+
 export interface SandboxRunResult {
   sandbox_id: string;
   run_id: string;
