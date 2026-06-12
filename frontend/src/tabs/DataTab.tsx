@@ -26,10 +26,18 @@ export function DataTab() {
     api.schema().then((s) => setDatasets(s.datasets)).catch((e) => setError(String(e.message)));
   }, [schemaVersion]);
 
-  // sync local section with the global selection (e.g. "Open" from Home)
+  // sync local section with the global selection (e.g. "Open" from Home/Upload)
   useEffect(() => {
     if (selectedSection) setSection(selectedSection);
   }, [selectedSection]);
+
+  // If nothing is selected yet, default to the most-recent dataset so something
+  // always shows (e.g. right after an upload).
+  useEffect(() => {
+    if (!section && datasets.length > 0) {
+      setSection(selectedSection ?? datasets[datasets.length - 1].name);
+    }
+  }, [datasets, section, selectedSection]);
 
   const load = useCallback(
     async (sec: string, reset: boolean) => {
@@ -203,7 +211,8 @@ export function DataTab() {
         <div
           ref={scrollRef}
           onScroll={onScroll}
-          className="min-h-0 flex-1 overflow-auto rounded-lg border border-slate-200 bg-white"
+          style={{ height: "calc(100vh - 200px)" }}
+          className="overflow-auto rounded-lg border border-slate-200 bg-white"
         >
           <table className="w-full border-collapse text-xs">
             <thead className="sticky top-0 z-10">

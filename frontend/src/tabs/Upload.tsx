@@ -26,7 +26,7 @@ function parsePreview(text: string): Preview {
 const STAGES = ["Preserving source", "Landing verbatim", "Inferring schema", "Running QC checks", "Sealing"];
 
 export function Upload() {
-  const { refreshSchema, openDataset } = useApp();
+  const { refreshSchema, openDataset, setSelectedSection } = useApp();
   const fileRef = useRef<HTMLInputElement>(null);
   const [file, setFile] = useState<File | null>(null);
   const [preview, setPreview] = useState<Preview | null>(null);
@@ -64,6 +64,7 @@ export function Upload() {
       const res = await api.ingest(file, engine, biopackConfig());
       setResult(res);
       refreshSchema();
+      setSelectedSection(res.section); // so the Data tab shows it immediately
     } catch (e) {
       setError(String((e as Error).message ?? e));
     } finally {
