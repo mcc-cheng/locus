@@ -31,40 +31,69 @@ from services import (
 
 from .brain import AgentError, Brain
 from .stats import build_stat_script, parse_stat_output
-from .steps import Answer, MakeChart, RunSql, RunStat
+from .steps import Answer, MakeChart, MakeFigure, RunSql, RunStat
 
-MAX_STEPS = 4
+MAX_STEPS = 6
 _PREVIEW_ROWS = 12
 _CELL = 60
 
 _TOOLS_DOC = """\
-You are Locus's data analyst. You help a scientist understand their datasets by
-exploring the data yourself before answering. You have READ-ONLY access — you can
-never change the data.
+You are Locus's data analyst, helping a scientist explore their datasets and
+write up findings. Explore the data YOURSELF with tools before answering. You
+have READ-ONLY access and can never change the data.
 
-Each turn, respond with JSON: {"thought": "...", "step": {...}}. Choose ONE step:
+CRITICAL — every column is stored as TEXT (VARCHAR). For ANY numeric work
+(AVG, SUM, MIN, MAX, comparisons, math) you MUST cast: TRY_CAST("col" AS DOUBLE).
+e.g. SELECT AVG(TRY_CAST("age" AS DOUBLE)) FROM "section"."raw".
+The data profile below tells you which columns are numeric.
 
-- run_sql:    {"kind":"run_sql","sql":"SELECT ... "}
-    Explore the data with a single read-only SELECT. Use fully-qualified names
-    like "section"."table". Prefer the verbatim "raw" table. SELECT only.
+Each turn, respond with JSON: {"thought":"...", "step":{...}}. Choose ONE step:
+
+- run_sql:    {"kind":"run_sql","sql":"SELECT ..."}
+    A single read-only SELECT. Use fully-qualified "section"."table" and the
+    EXACT column names from the profile. Quote identifiers with DOUBLE QUOTES
+    ("cohort"), never backticks. Use single quotes for text literals ('yes').
+    To count rows use COUNT(*), not COUNT(DISTINCT ...). Prefer the "raw" table.
 - make_chart: {"kind":"make_chart","chart_type":"histogram|bar|heatmap|dose_response|scatter",
                "section":"...","table":"raw","x":"col","y":"col","color":"col",...}
-    Build a chart (aggregated on the server) when a visual answer helps.
-- run_stat:   {"kind":"run_stat","test":"ttest_ind|pearsonr|...","section":"...",
-               "table":"raw","columns":["a","b"],"group_by":"col"}
-    Run a statistical test in a sandbox.
-- answer:     {"kind":"answer"}
-    Stop exploring and write the final answer.
+    A quick interactive chart (aggregated on the server).
+- make_figure:{"kind":"make_figure","code":"...python...","caption":"..."}
+    A custom matplotlib figure for a report. In the sandbox, `con`, `pd`, `np`,
+    and `plt` are ALREADY defined — do NOT import anything, do NOT call
+    duckdb.connect, do NOT create views. `con` is already connected to the data.
+    Query with con.execute('SELECT ... FROM "<section>"."raw"').df() using the
+    EXACT section name from the profile, then draw with plt. The figure is saved
+    automatically (no plt.show needed). Cast numerics with TRY_CAST. Example
+    (replace the section name with the real one):
+      df = con.execute('SELECT "cohort", COUNT(*) AS n FROM "abc__123"."raw" GROUP BY "cohort"').df()
+      plt.figure(figsize=(7,4)); plt.bar(df["cohort"], df["n"]); plt.title("Patients per cohort"); plt.ylabel("count")
+    Use for regressions, error bars, multi-panel or annotated report figures.
+- run_stat:   {"kind":"run_stat","test":"ttest_ind|ttest_rel|mannwhitneyu|pearsonr|spearmanr|f_oneway",
+               "section":"...","table":"raw","columns":["a","b"],"group_by":"col"}
+    A statistical test in a sandbox.
+- answer:     {"kind":"answer"}   Stop exploring and write the final answer.
 
-Guidance: run one or two queries to get the real numbers, then answer. Always use
-columns that exist. When the user asks for a chart, use make_chart. When they ask
-whether groups differ or whether things correlate, use run_stat. Don't loop more
-than necessary.
+Workflow: run the queries you need to get REAL numbers, verify with COUNT/GROUP BY,
+then answer. For "make a figure"/"for my report" use make_figure. For "do groups
+differ"/"is X correlated with Y" use run_stat. Create at most ONE chart or figure,
+then immediately use the 'answer' step — don't repeat a successful visual.
+
+If the question refers to a column, category, or filter that is NOT in the profile
+(e.g. a column that doesn't exist), do NOT substitute a different column — use the
+'answer' step and say that information isn't in the data.
 """
 
 _ANSWER_SYSTEM = """\
-You are Locus's data analyst. Using ONLY the observations gathered above (query
-results, charts, statistics), answer the user's latest question.
+You are Locus's data analyst. Answer the user's latest question using ONLY the
+numbers in the observations above (query results, statistics).
+
+CRITICAL: Never invent or guess numbers. If the observations are empty, only
+contain errors, or do not actually contain the figure asked for, say plainly that
+you could not compute it and suggest how to rephrase — do NOT make up values.
+
+If a chart or figure was created successfully (the observation says it is shown to
+the user), present it positively — e.g. "Here is a bar chart of …" — and describe
+what it shows. Do not say you couldn't make it.
 
 Format your answer in clean Markdown:
 - Start directly with the answer — no preamble like "Based on the data".
@@ -81,7 +110,24 @@ class AgentTurn:
     events: list[dict] = field(default_factory=list)
     used_sql: list[str] = field(default_factory=list)
     charts: list[dict] = field(default_factory=list)
+    figures: list[dict] = field(default_factory=list)
     error: str | None = None
+
+
+def _clean_code(code: str) -> str:
+    """Strip wrappers a model sometimes adds (```python fences, <python> tags),
+    then normalize MySQL backtick quoting in any embedded SQL."""
+    c = code.strip()
+    if c.startswith("<python>"):
+        c = c[len("<python>") :]
+    if c.endswith("</python>"):
+        c = c[: -len("</python>")]
+    c = c.strip()
+    if c.startswith("```"):
+        c = c.split("\n", 1)[1] if "\n" in c else c[3:]
+        if c.rstrip().endswith("```"):
+            c = c.rstrip()[:-3]
+    return c.strip().replace("`", '"')
 
 
 def _fmt_table(columns: list[str], rows: list[list], n: int = _PREVIEW_ROWS) -> str:
@@ -119,21 +165,79 @@ class AnalystAgent:
         if not datasets:
             return "No datasets have been uploaded yet."
         qs = self._query_service()
-        lines = ["The user has these datasets (use the exact section/table/column names):"]
+        lines = [
+            "The user has these datasets. Use the EXACT section/table/column names. "
+            "All values are stored as TEXT — cast numeric columns with TRY_CAST."
+        ]
         for d in datasets:
-            lines.append(f'\n• section "{d.name}"  (file: {d.source_filename})')
-            for t in d.tables:
-                cols = ", ".join(f"{c.name}" for c in t.columns)
-                lines.append(f'    table "{t.name}" ({t.row_count} rows): {cols}')
-            # a couple of sample rows from raw so the model "sees" the data
-            try:
-                sample = qs.run(f'SELECT * FROM "{d.name}"."raw"', page=1, page_size=2)
-                if sample.rows:
-                    lines.append("    sample of raw:")
-                    lines.append("      " + _fmt_table(list(sample.columns), sample.rows, 2).replace("\n", "\n      "))
-            except ServiceError:
-                pass
+            raw = next((t for t in d.tables if t.name == "raw"), d.tables[0])
+            other = [t.name for t in d.tables if t.name != raw.name]
+            lines.append(f'\n• section "{d.name}"  (file: {d.source_filename}, {raw.row_count} rows)')
+            if other:
+                lines.append(f"    other tables: {', '.join(other)}")
+            lines.append('    columns of "raw":')
+            for line in self._profile_columns(qs, d.name, [c.name for c in raw.columns]):
+                lines.append("      " + line)
         return "\n".join(lines)
+
+    def _profile_columns(self, qs: QueryService, section: str, cols: list[str]) -> list[str]:
+        """One aggregate pass to classify each column and summarize it, so the
+        model knows types, ranges, and categories instead of guessing."""
+
+        def q(c: str) -> str:
+            return '"' + c.replace('"', '""') + '"'
+
+        raw = f'"{section}"."raw"'
+        parts = ["COUNT(*) AS n"]
+        for i, c in enumerate(cols):
+            qc = q(c)
+            parts += [
+                f"COUNT(DISTINCT {qc}) AS d{i}",
+                f"COUNT({qc}) AS nn{i}",
+                f"COUNT(TRY_CAST({qc} AS DOUBLE)) AS num{i}",
+                f"MIN(TRY_CAST({qc} AS DOUBLE)) AS lo{i}",
+                f"MAX(TRY_CAST({qc} AS DOUBLE)) AS hi{i}",
+                f"AVG(TRY_CAST({qc} AS DOUBLE)) AS av{i}",
+            ]
+        try:
+            res = qs.run(f"SELECT {', '.join(parts)} FROM {raw}", page_size=1)
+            row = dict(zip(res.columns, res.rows[0]))
+        except ServiceError:
+            return [", ".join(cols)]
+
+        out: list[str] = []
+        cat_budget = 10
+        for i, c in enumerate(cols):
+            n = row.get("n") or 0
+            distinct = int(row.get(f"d{i}") or 0)
+            nn = int(row.get(f"nn{i}") or 0)
+            num = int(row.get(f"num{i}") or 0)
+            numeric = nn > 0 and num / nn >= 0.8
+            nulls = (n - nn) if n else 0
+            note = f" ({nulls} null)" if nulls else ""
+            if numeric:
+                lo, hi, av = row.get(f"lo{i}"), row.get(f"hi{i}"), row.get(f"av{i}")
+                rng = (
+                    f"range {lo:g}–{hi:g}, mean {av:.3g}"
+                    if lo is not None and hi is not None
+                    else "numeric"
+                )
+                out.append(f'"{c}": numeric — {rng}{note}')
+            elif distinct <= 25 and cat_budget > 0:
+                cat_budget -= 1
+                try:
+                    vals = qs.run(
+                        f"SELECT DISTINCT {q(c)} FROM {raw} WHERE {q(c)} IS NOT NULL LIMIT 12",
+                        page_size=12,
+                    ).rows
+                    cats = ", ".join(str(v[0]) for v in vals)
+                except ServiceError:
+                    cats = ""
+                out.append(f'"{c}": categorical — {distinct} values: {cats}{note}')
+            else:
+                kind = "id/unique" if n and distinct >= 0.9 * n else "text"
+                out.append(f'"{c}": {kind} — {distinct} distinct{note}')
+        return out
 
     def _query_service(self) -> QueryService:
         if self._qs is None:
@@ -156,10 +260,16 @@ class AnalystAgent:
     # ---- tool execution --------------------------------------------------
 
     def _do_sql(self, sql: str) -> tuple[str, dict]:
+        # Models often emit MySQL-style backtick quoting; DuckDB has no use for
+        # backticks, so normalizing them to double quotes is safe and fixes a
+        # very common failure.
+        sql = sql.replace("`", '"')
         try:
             res = self._query_service().run(sql, page=1, page_size=200)
         except ServiceError as exc:
             return f"ERROR: {exc}", {"error": str(exc)}
+        if not res.rows:
+            return "(0 rows returned)", {"rows": 0}
         return _fmt_table(list(res.columns), res.rows), {"rows": len(res.rows)}
 
     def _do_chart(self, step: MakeChart) -> tuple[dict | None, str, dict | None]:
@@ -177,6 +287,25 @@ class AnalystAgent:
             f"created a {step.chart_type} chart with {out.row_count} points",
             req.model_dump(),
         )
+
+    def _do_figure(self, step: MakeFigure) -> tuple[str | None, str]:
+        """Run the model's matplotlib code in a sandbox and return the figure as
+        a base64 data URI (so it renders inline, no artifact serving needed)."""
+        if self.sandboxes is None:
+            return None, "ERROR: no sandbox available for figures"
+        handle = self.sandboxes.create()
+        try:
+            run = run_script(handle, _clean_code(step.code))
+            pngs = [a for a in run.artifacts if a.lower().endswith(".png")]
+            if not pngs:
+                detail = run.stderr.strip()[-400:] if run.stderr.strip() else "no figure was drawn"
+                return None, f"ERROR: {detail}"
+            import base64
+
+            data = (handle.outputs_dir / run.run_id / pngs[0]).read_bytes()
+            return "data:image/png;base64," + base64.b64encode(data).decode(), "figure created"
+        finally:
+            self.sandboxes.delete(handle.id)
 
     def _do_stat(self, step: RunStat) -> str:
         if self.sandboxes is None:
@@ -238,12 +367,15 @@ class AnalystAgent:
                     spec, summary, req = self._do_chart(step)
                     if spec is not None:
                         yield {"type": "chart", "spec": spec, "chart_request": req}
+                        obs = f"{summary}. The chart is now shown to the user. Use the 'answer' step next and describe it briefly."
+                    else:
+                        obs = summary
                     yield {
                         "type": "step", "tool": "make_chart", "thought": decision.thought,
                         "summary": summary,
                     }
                     msgs.append({"role": "assistant", "content": f"make_chart: {step.chart_type}"})
-                    msgs.append({"role": "user", "content": f"Observation: {summary}"})
+                    msgs.append({"role": "user", "content": f"Observation: {obs}"})
                 elif isinstance(step, RunStat):
                     summary = self._do_stat(step)
                     yield {
@@ -252,6 +384,24 @@ class AnalystAgent:
                     }
                     msgs.append({"role": "assistant", "content": f"run_stat: {step.test}"})
                     msgs.append({"role": "user", "content": f"Observation: {summary}"})
+                elif isinstance(step, MakeFigure):
+                    image, summary = self._do_figure(step)
+                    if image is not None:
+                        yield {"type": "figure", "image": image, "caption": step.caption}
+                        obs = (
+                            "The figure was created successfully and is now shown to the user. "
+                            "Use the 'answer' step next. Describe what the figure shows "
+                            "qualitatively; do NOT state specific counts or values unless you "
+                            "obtained them from a run_sql result."
+                        )
+                    else:
+                        obs = summary
+                    yield {
+                        "type": "step", "tool": "make_figure", "thought": decision.thought,
+                        "summary": summary,
+                    }
+                    msgs.append({"role": "assistant", "content": "make_figure"})
+                    msgs.append({"role": "user", "content": f"Observation: {obs}"})
 
             # Answer phase — stream the grounded final answer.
             answer_msgs = msgs + [
@@ -279,6 +429,8 @@ class AnalystAgent:
                 turn.used_sql.append(ev["sql"])
             elif ev["type"] == "chart":
                 turn.charts.append(ev)
+            elif ev["type"] == "figure":
+                turn.figures.append(ev)
             elif ev["type"] == "final":
                 turn.response = ev["response"]
         return turn

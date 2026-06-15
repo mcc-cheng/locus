@@ -57,12 +57,26 @@ class RunStat(_Step):
     group_by: str | None = None
 
 
+class MakeFigure(_Step):
+    """Generate a publication-style figure with matplotlib in a sandbox.
+
+    ``code`` is Python that has ``con`` (a DuckDB connection to the data), ``pd``,
+    ``np``, and ``plt`` available; any figure it draws is captured automatically.
+    Used for research-report figures (regressions, error bars, annotations) that
+    go beyond the quick built-in chart types.
+    """
+
+    kind: Literal["make_figure"]
+    code: str
+    caption: str = ""
+
+
 class Answer(_Step):
     kind: Literal["answer"]
 
 
 AgentStep = Annotated[
-    Union[RunSql, MakeChart, RunStat, Answer], Field(discriminator="kind")
+    Union[RunSql, MakeChart, RunStat, MakeFigure, Answer], Field(discriminator="kind")
 ]
 
 

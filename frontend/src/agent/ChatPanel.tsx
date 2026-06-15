@@ -16,10 +16,15 @@ interface Chart {
   spec: Record<string, unknown>;
   chartRequest: ChartRequest | null;
 }
+interface Figure {
+  image: string;
+  caption?: string;
+}
 interface AssistantMsg {
   role: "assistant";
   steps: Step[];
   charts: Chart[];
+  figures: Figure[];
   text: string;
   error?: string | null;
   done?: boolean;
@@ -55,11 +60,18 @@ export function ChatPanel({ onCollapse }: { onCollapse: () => void }) {
   // PURE updater: never mutate existing state (React StrictMode double-invokes
   // updaters in dev — an in-place mutation would apply each event twice).
   function applyEvent(prev: AssistantMsg, e: AgentEvent): AssistantMsg {
-    const m: AssistantMsg = { ...prev, steps: [...prev.steps], charts: [...prev.charts] };
+    const m: AssistantMsg = {
+      ...prev,
+      steps: [...prev.steps],
+      charts: [...prev.charts],
+      figures: [...prev.figures],
+    };
     if (e.type === "step") {
       m.steps.push({ tool: e.tool, thought: e.thought, sql: e.sql, summary: e.summary });
     } else if (e.type === "chart") {
       m.charts.push({ spec: e.spec, chartRequest: e.chart_request });
+    } else if (e.type === "figure") {
+      m.figures.push({ image: e.image, caption: e.caption });
     } else if (e.type === "token") {
       m.text += e.text;
     } else if (e.type === "final") {
@@ -89,7 +101,7 @@ export function ChatPanel({ onCollapse }: { onCollapse: () => void }) {
     setMessages((m) => [
       ...m,
       { role: "user", text },
-      { role: "assistant", steps: [], charts: [], text: "" },
+      { role: "assistant", steps: [], charts: [], figures: [], text: "" },
     ]);
     setInput("");
     setStreaming(true);
@@ -237,6 +249,23 @@ function AssistantBubble({
           <span className="ml-0.5 inline-block h-3.5 w-1.5 animate-pulse bg-indigo-400 align-middle" />
         )}
       </div>
+
+      {/* Figures (matplotlib, for reports) */}
+      {msg.figures.map((f, i) => (
+        <figure key={`fig-${i}`} className="mt-2.5">
+          <img
+            src={f.image}
+            alt={f.caption || "figure"}
+            className="w-full rounded-lg border border-slate-200"
+          />
+          <figcaption className="mt-1 flex items-center justify-between text-[11px] text-slate-500">
+            <span>{f.caption}</span>
+            <a href={f.image} download={`figure-${i + 1}.png`} className="font-medium text-indigo-600 hover:underline">
+              Download PNG
+            </a>
+          </figcaption>
+        </figure>
+      ))}
 
       {/* Charts */}
       {msg.charts.map((c, i) => (

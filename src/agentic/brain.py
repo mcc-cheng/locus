@@ -11,6 +11,7 @@ Tests inject fakes implementing the ``Brain`` protocol.
 
 from __future__ import annotations
 
+import os
 from collections.abc import Iterator
 from typing import Protocol
 
@@ -20,7 +21,9 @@ from ingest.errors import OllamaUnavailableError
 
 from .steps import StepDecision
 
-DEFAULT_MODEL = "qwen2.5:7b-instruct"
+# Override with LOCUS_AGENT_MODEL — a larger model (e.g. qwen2.5:14b-instruct or
+# qwen2.5:32b-instruct) makes the analyst noticeably smarter for research use.
+DEFAULT_MODEL = os.environ.get("LOCUS_AGENT_MODEL", "qwen2.5:7b-instruct")
 
 _SERVER_DOWN = """\
 The analyst needs a local Ollama server, but none is reachable.
