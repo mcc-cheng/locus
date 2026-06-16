@@ -113,6 +113,17 @@ def create_app(root: str | Path, *, brain_factory=None) -> FastAPI:
     app = FastAPI(title="Locus API", version="0.1.0", lifespan=lifespan)
     app.state.locus = state
 
+    # Local desktop tool bound to 127.0.0.1; allow the dev frontend (and the
+    # Tauri webview) to call it directly without cross-origin failures.
+    from fastapi.middleware.cors import CORSMiddleware
+
+    app.add_middleware(
+        CORSMiddleware,
+        allow_origins=["*"],
+        allow_methods=["*"],
+        allow_headers=["*"],
+    )
+
     # ---- exception handlers: everything becomes an envelope ----
     @app.exception_handler(SectionNotFoundError)
     async def _not_found(_: Request, exc: SectionNotFoundError):

@@ -42,7 +42,14 @@ def _free_port() -> int:
 
 def resolve_port() -> int:
     env = os.environ.get("LOCUS_PORT")
-    return int(env) if env and env.isdigit() and int(env) > 0 else _free_port()
+    if env and env.isdigit() and int(env) > 0:
+        return int(env)
+    # Packaged app: pick a free port and report it via the file the shell reads.
+    if os.environ.get("LOCUS_PORT_FILE"):
+        return _free_port()
+    # Dev default: 8000 — the port the Vite dev proxy targets, so
+    # `python -m api.sidecar` + `npm run dev` just work together.
+    return 8000
 
 
 def run(
