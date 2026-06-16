@@ -93,7 +93,7 @@ exe = EXE(
     name="locus-sidecar",
     console=True,
     disable_windowed_traceback=False,
-    target_arch="aarch64",
+    target_arch="arm64",
 )
 
 coll = COLLECT(

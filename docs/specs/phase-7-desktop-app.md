@@ -1,7 +1,9 @@
 # Phase 7 — Desktop App (Tauri)
 
-**Status:** implemented (sidecar verified; Tauri/PyInstaller artifacts require the
-native toolchain to build and were authored but not bundle-tested in this env)
+**Status:** built & verified — the `.app` and `.dmg` were produced on Apple
+Silicon and the app launches: the shell spawns the frozen sidecar, which serves
+`/health`. The frozen bundle was independently verified to run DuckDB queries,
+matplotlib figure generation, and sklearn/scipy stats.
 **Modules:** `src-tauri/`, `packaging/`, `src/api/sidecar.py`
 
 ## 7.1 Tauri shell (`src-tauri/`)

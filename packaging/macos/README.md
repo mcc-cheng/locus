@@ -12,7 +12,7 @@ sidecar (PyInstaller) and the built React frontend.
 ## One-time setup
 
 ```bash
-make -C packaging/macos deps     # PyInstaller, frontend deps, tauri-cli
+make -C packaging/macos deps     # PyInstaller, frontend deps + Tauri CLI (npm)
 make -C packaging/macos icons    # generate src-tauri/icons/* from icon.png
 ```
 
@@ -22,17 +22,22 @@ make -C packaging/macos icons    # generate src-tauri/icons/* from icon.png
 make -C packaging/macos dist
 ```
 
-This runs: **PyInstaller** (freezes `src/api/sidecar.py` + all packages and the
-bio/experiment stacks into `packaging/build/locus-sidecar/`) → **Tauri build**
-(builds the frontend, bundles the sidecar as a resource, links the Rust shell).
+This runs (all verified working on Apple Silicon):
+1. **PyInstaller** freezes `src/api/sidecar.py` + every package and the
+   bio/experiment stacks into a ~454 MB onedir bundle, staged at
+   `packaging/build/locus-sidecar/`.
+2. **Tauri build** builds the frontend and links the Rust shell, bundling the
+   frozen sidecar as a resource → a self-contained `.app` (~530 MB).
+3. **hdiutil** packages the `.app` into a drag-to-Applications `.dmg`.
+
+> The Tauri config targets `app` only; the `.dmg` is made with `hdiutil` because
+> Tauri's built-in DMG step uses Finder/AppleScript and fails in headless builds.
 
 ### Output
 
 ```
-src-tauri/target/aarch64-apple-darwin/release/bundle/macos/
-  Biomedical Data Aggregator.app
-src-tauri/target/aarch64-apple-darwin/release/bundle/dmg/
-  Biomedical Data Aggregator_0.1.0_aarch64.dmg
+src-tauri/target/release/bundle/macos/Biomedical Data Aggregator.app   (~530 MB)
+packaging/build/Biomedical Data Aggregator.dmg                          (~246 MB)
 ```
 
 ## Opening the unsigned app (Gatekeeper)

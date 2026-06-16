@@ -1,31 +1,30 @@
-# Locus macOS build pipeline (Phase 7.3).
+# Locus macOS build pipeline (verified working).
 #
-#   make deps   — install build tooling (PyInstaller, frontend deps, tauri-cli)
-#   make icons  — generate Tauri icons from packaging/macos/icon.png
-#   make dist   — freeze sidecar -> tauri build -> .app and .dmg
+#   make deps   — install build tooling (PyInstaller, frontend deps + Tauri CLI)
+#   make icons  — generate the app icon set from packaging/macos/icon.png
+#   make dist   — freeze sidecar -> build the .app -> package a .dmg
 #
 # Final artifacts:
-#   src-tauri/target/aarch64-apple-darwin/release/bundle/macos/
-#     Biomedical Data Aggregator.app
-#     Biomedical Data Aggregator_0.1.0_aarch64.dmg
+#   src-tauri/target/release/bundle/macos/Biomedical Data Aggregator.app
+#   packaging/build/Biomedical Data Aggregator.dmg
 
-ROOT   := $(abspath $(dir $(lastword $(MAKEFILE_LIST)))../..)
-VENV   := $(ROOT)/.venv
-PY     := $(VENV)/bin/python
-TARGET := aarch64-apple-darwin
-BUILD  := $(ROOT)/packaging/build
+ROOT  := $(abspath $(dir $(lastword $(MAKEFILE_LIST)))../..)
+PY    := $(ROOT)/.venv/bin/python
+TAURI := $(ROOT)/frontend/node_modules/.bin/tauri
+BUILD := $(ROOT)/packaging/build
+APP   := $(ROOT)/src-tauri/target/release/bundle/macos/Biomedical Data Aggregator.app
+DMG   := $(BUILD)/Biomedical Data Aggregator.dmg
 
-.PHONY: dist deps icons sidecar app clean
+.PHONY: dist deps icons sidecar app dmg clean
 
 deps:
 	$(PY) -m pip install -e "$(ROOT)[bio,experiments,packaging]"
 	npm --prefix $(ROOT)/frontend install
-	cargo install tauri-cli --version "^2.0" --locked || true
 
 icons:
-	cd $(ROOT)/src-tauri && cargo tauri icon $(ROOT)/packaging/macos/icon.png
+	cd $(ROOT) && $(TAURI) icon packaging/macos/icon.png
 
-# Freeze the Python sidecar into an independent onedir bundle, then stage it
+# Freeze the Python sidecar into a self-contained onedir bundle, then stage it
 # where tauri.conf.json expects it (packaging/build/locus-sidecar).
 sidecar:
 	cd $(ROOT) && $(PY) -m PyInstaller packaging/locus_sidecar.spec --noconfirm \
@@ -34,15 +33,25 @@ sidecar:
 	cp -R $(BUILD)/_dist/locus-sidecar $(BUILD)/locus-sidecar
 	@echo "Sidecar staged at $(BUILD)/locus-sidecar"
 
-# Build the Tauri app (its beforeBuildCommand builds the frontend).
+# Build the .app (the Tauri CLI builds the frontend via beforeBuildCommand).
 app: sidecar
-	cd $(ROOT)/src-tauri && cargo tauri build --target $(TARGET)
+	cd $(ROOT)/src-tauri && $(TAURI) build
 
-dist: app
+# Package the .app into a drag-to-Applications .dmg (hdiutil — no Finder needed).
+dmg:
+	@stage=$$(mktemp -d); \
+	cp -R "$(APP)" "$$stage/"; \
+	ln -s /Applications "$$stage/Applications"; \
+	rm -f "$(DMG)"; \
+	hdiutil create -volname "Biomedical Data Aggregator" -srcfolder "$$stage" \
+		-ov -format UDZO "$(DMG)"; \
+	rm -rf "$$stage"
+
+dist: app dmg
 	@echo ""
-	@echo "Done. Artifacts:"
-	@ls -1 "$(ROOT)/src-tauri/target/$(TARGET)/release/bundle/macos/" 2>/dev/null || true
-	@ls -1 "$(ROOT)/src-tauri/target/$(TARGET)/release/bundle/dmg/" 2>/dev/null || true
+	@echo "Done."
+	@echo "  App: $(APP)"
+	@echo "  DMG: $(DMG)"
 
 clean:
 	rm -rf $(BUILD) $(ROOT)/src-tauri/target $(ROOT)/frontend/dist
