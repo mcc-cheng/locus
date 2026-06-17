@@ -19,6 +19,23 @@ Each turn runs a short ReAct loop on a local Ollama model (`qwen2.5:7b-instruct`
 3. **Answer phase:** a free-form chat call streams the final answer token by
    token, grounded only in the observations gathered.
 
+## Human-in-the-loop (data quality)
+
+Real lab data has errors; the agent must not silently skip them.
+
+- A deterministic **data-quality inspector** (`_column_issues`) counts missing
+  (null) and non-numeric values per column. Non-numeric only counts as a problem
+  in numeric chart roles (a bar's categorical x is fine).
+- **Chart gate:** when `make_chart` targets a column with missing/invalid values
+  and the user hasn't agreed to proceed, the loop emits an `ask` event (e.g.
+  *"score (2 missing of 5 rows) — how should I handle them?"*) with clickable
+  options (Exclude rows / Show rows / Cancel) and ends the turn. After the user
+  picks "exclude … and continue", the next turn builds the chart.
+- Tools `ask_user` (pause with options) and `check_data` (inspect columns) let
+  the agent raise questions proactively. `ask` events stream to the UI as
+  buttons; clicking one sends it as the next message (stateless history).
+- Chart column fields are normalized (stray `TRY_CAST(...)`/quotes stripped).
+
 ## Tools — strict, validated (`steps.py`)
 
 The model proposes one step per turn as JSON validated against a discriminated

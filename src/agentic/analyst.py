@@ -31,7 +31,9 @@ from services import (
 
 from .brain import AgentError, Brain
 from .stats import build_stat_script, parse_stat_output
-from .steps import Answer, MakeChart, MakeFigure, RunSql, RunStat
+from .steps import Answer, AskUser, CheckData, MakeChart, MakeFigure, RunSql, RunStat
+
+_PROCEED_WORDS = ("proceed", "exclude", "continue", "go ahead", "drop ", "ignore missing", "yes")
 
 MAX_STEPS = 6
 _PREVIEW_ROWS = 12
@@ -56,7 +58,10 @@ Each turn, respond with JSON: {"thought":"...", "step":{...}}. Choose ONE step:
     To count rows use COUNT(*), not COUNT(DISTINCT ...). Prefer the "raw" table.
 - make_chart: {"kind":"make_chart","chart_type":"histogram|bar|heatmap|dose_response|scatter",
                "section":"...","table":"raw","x":"col","y":"col","color":"col",...}
-    A quick interactive chart (aggregated on the server).
+    A quick interactive chart (aggregated on the server). Give PLAIN column names
+    (e.g. "score") — never SQL expressions; the server casts numerics for you.
+    If the user already agreed to proceed despite missing values, set
+    "confirm_incomplete": true and do not ask again.
 - make_figure:{"kind":"make_figure","code":"...python...","caption":"..."}
     A custom matplotlib figure for a report. In the sandbox, `con`, `pd`, `np`,
     and `plt` are ALREADY defined — do NOT import anything, do NOT call
@@ -71,16 +76,29 @@ Each turn, respond with JSON: {"thought":"...", "step":{...}}. Choose ONE step:
 - run_stat:   {"kind":"run_stat","test":"ttest_ind|ttest_rel|mannwhitneyu|pearsonr|spearmanr|f_oneway",
                "section":"...","table":"raw","columns":["a","b"],"group_by":"col"}
     A statistical test in a sandbox.
+- check_data: {"kind":"check_data","section":"...","table":"raw","columns":["a","b"]}
+    Inspect columns for missing values / non-numeric entries before using them.
+- ask_user:   {"kind":"ask_user","question":"...","options":["...","..."]}
+    PAUSE and ask the human, offering 2-4 short clickable options. This ends your
+    turn until they choose.
 - answer:     {"kind":"answer"}   Stop exploring and write the final answer.
 
-Workflow: run the queries you need to get REAL numbers, verify with COUNT/GROUP BY,
-then answer. For "make a figure"/"for my report" use make_figure. For "do groups
-differ"/"is X correlated with Y" use run_stat. Create at most ONE chart or figure,
-then immediately use the 'answer' step — don't repeat a successful visual.
+Human-in-the-loop — real lab data has errors; never silently skip them:
+- The profile flags columns with nulls. If the user asks to chart/analyze a column
+  that has missing or non-numeric values, do NOT just drop them. First use
+  ask_user to ask how to handle it, with concrete options like
+  ["Exclude the rows with missing values and continue", "Show me those rows first",
+  "Cancel"]. Only build the chart after they choose; then set
+  "confirm_incomplete": true on make_chart.
+- Use check_data when unsure whether a column is clean.
+- If a column/category/filter is NOT in the profile, do not substitute another —
+  use ask_user or answer that it isn't in the data.
+- Only ask_user when you genuinely need the human's decision (a real data problem
+  or a true ambiguity). For straightforward questions, just answer — don't ask
+  unnecessary clarifying questions.
 
-If the question refers to a column, category, or filter that is NOT in the profile
-(e.g. a column that doesn't exist), do NOT substitute a different column — use the
-'answer' step and say that information isn't in the data.
+Workflow: get REAL numbers (verify with COUNT/GROUP BY), handle data issues with the
+human, then answer. Create at most ONE chart or figure, then answer.
 """
 
 _ANSWER_SYSTEM = """\
@@ -111,7 +129,26 @@ class AgentTurn:
     used_sql: list[str] = field(default_factory=list)
     charts: list[dict] = field(default_factory=list)
     figures: list[dict] = field(default_factory=list)
+    asks: list[dict] = field(default_factory=list)
     error: str | None = None
+
+
+import re
+
+_CAST_RE = re.compile(r"(?:try_)?cast\(\s*(.+?)\s+as\s+\w+\s*\)", re.IGNORECASE)
+
+
+def _clean_col(name: str | None) -> str | None:
+    """Normalize a chart column field: models sometimes pass SQL expressions like
+    TRY_CAST("x" AS DOUBLE) or quoted/backticked names. Chart fields must be plain
+    column names (the visualization service casts internally)."""
+    if not name:
+        return name
+    s = name.strip()
+    m = _CAST_RE.fullmatch(s)
+    if m:
+        s = m.group(1).strip()
+    return s.strip().strip('`"').strip() or None
 
 
 def _clean_code(code: str) -> str:
@@ -259,6 +296,53 @@ class AnalystAgent:
 
     # ---- tool execution --------------------------------------------------
 
+    def _column_issues(self, section: str, table: str, columns: list[str]) -> dict[str, dict]:
+        """Deterministic data-quality findings per column: missing (null) and
+        non-numeric counts. The grounding for human-in-the-loop questions."""
+
+        def q(c: str) -> str:
+            return '"' + c.replace('"', '""') + '"'
+
+        cols = [c for c in columns if c]
+        if not cols:
+            return {}
+        raw = f'"{section}"."{table}"'
+        parts = ["COUNT(*) AS n"]
+        for i, c in enumerate(cols):
+            parts.append(f"COUNT(*) FILTER (WHERE {q(c)} IS NULL) AS miss{i}")
+            parts.append(f"COUNT(*) FILTER (WHERE {q(c)} IS NOT NULL AND TRY_CAST({q(c)} AS DOUBLE) IS NULL) AS nonnum{i}")
+        try:
+            res = self._query_service().run(f"SELECT {', '.join(parts)} FROM {raw}", page_size=1)
+            row = dict(zip(res.columns, res.rows[0]))
+        except ServiceError:
+            return {}
+        out: dict[str, dict] = {}
+        for i, c in enumerate(cols):
+            out[c] = {
+                "n": int(row.get("n") or 0),
+                "missing": int(row.get(f"miss{i}") or 0),
+                "nonnumeric": int(row.get(f"nonnum{i}") or 0),
+            }
+        return out
+
+    def _chart_columns(self, step: MakeChart) -> list[str]:
+        return [c for c in (step.x, step.y, step.color, step.row, step.col, step.value) if c]
+
+    def _numeric_roles(self, step: MakeChart) -> set[str]:
+        """Columns this chart needs to be numeric (non-numeric there is a problem;
+        elsewhere, e.g. a bar's categorical x, it's expected)."""
+        t = step.chart_type
+        cols: set[str | None] = set()
+        if t == "histogram":
+            cols = {step.x}
+        elif t == "bar":
+            cols = {step.y} if step.aggregate != "count" else set()
+        elif t == "heatmap":
+            cols = {step.value}
+        elif t in ("dose_response", "scatter"):
+            cols = {step.x, step.y}
+        return {c for c in cols if c}
+
     def _do_sql(self, sql: str) -> tuple[str, dict]:
         # Models often emit MySQL-style backtick quoting; DuckDB has no use for
         # backticks, so normalizing them to double quotes is safe and fixes a
@@ -342,6 +426,7 @@ class AnalystAgent:
         system = _TOOLS_DOC + "\n\n" + self._context()
         msgs: list[dict] = [{"role": m["role"], "content": m["content"]} for m in history]
         msgs.append({"role": "user", "content": message})
+        self._message = message
 
         try:
             for _ in range(self.max_steps):
@@ -364,6 +449,49 @@ class AnalystAgent:
                     msgs.append({"role": "assistant", "content": f"run_sql: {step.sql}"})
                     msgs.append({"role": "user", "content": f"Observation:\n{obs}"})
                 elif isinstance(step, MakeChart):
+                    # Normalize column fields (strip stray TRY_CAST(...)/quotes the
+                    # model sometimes adds) before the gate and the build.
+                    step = step.model_copy(
+                        update={
+                            r: _clean_col(getattr(step, r))
+                            for r in ("x", "y", "color", "row", "col", "value")
+                        }
+                    )
+                    # Human-in-the-loop gate: if the plotted columns have missing /
+                    # non-numeric values and the user hasn't agreed to proceed, ask
+                    # them how to handle it instead of silently dropping rows.
+                    proceed = step.confirm_incomplete or any(
+                        w in self._message.lower() for w in _PROCEED_WORDS
+                    )
+                    numeric = self._numeric_roles(step)
+                    bad = {
+                        c: v
+                        for c, v in self._column_issues(
+                            step.section, step.table, self._chart_columns(step)
+                        ).items()
+                        if v["missing"] or (c in numeric and v["nonnumeric"])
+                    }
+                    if bad and not proceed:
+                        descs = []
+                        for c, v in bad.items():
+                            bits = []
+                            if v["missing"]:
+                                bits.append(f"{v['missing']} missing")
+                            if c in numeric and v["nonnumeric"]:
+                                bits.append(f"{v['nonnumeric']} non-numeric")
+                            descs.append(f'"{c}" ({", ".join(bits)} of {v["n"]} rows)')
+                        yield {
+                            "type": "ask",
+                            "question": "Some values needed for this chart are missing or invalid: "
+                            + "; ".join(descs)
+                            + ". How should I handle them?",
+                            "options": [
+                                "Exclude those rows and continue",
+                                "Show me the affected rows first",
+                                "Cancel",
+                            ],
+                        }
+                        return
                     spec, summary, req = self._do_chart(step)
                     if spec is not None:
                         yield {"type": "chart", "spec": spec, "chart_request": req}
@@ -376,6 +504,25 @@ class AnalystAgent:
                     }
                     msgs.append({"role": "assistant", "content": f"make_chart: {step.chart_type}"})
                     msgs.append({"role": "user", "content": f"Observation: {obs}"})
+                elif isinstance(step, CheckData):
+                    issues = self._column_issues(step.section, step.table, step.columns)
+                    if issues:
+                        obs = "; ".join(
+                            f'"{c}": {v["missing"]} missing, {v["nonnumeric"]} non-numeric (of {v["n"]})'
+                            for c, v in issues.items()
+                        )
+                    else:
+                        obs = "no columns checked"
+                    yield {
+                        "type": "step", "tool": "check_data", "thought": decision.thought,
+                        "summary": obs,
+                    }
+                    msgs.append({"role": "assistant", "content": "check_data"})
+                    msgs.append({"role": "user", "content": f"Data check: {obs}"})
+                elif isinstance(step, AskUser):
+                    opts = [o for o in step.options if o.strip()] or ["Yes", "No"]
+                    yield {"type": "ask", "question": step.question, "options": opts}
+                    return
                 elif isinstance(step, RunStat):
                     summary = self._do_stat(step)
                     yield {
@@ -431,6 +578,8 @@ class AnalystAgent:
                 turn.charts.append(ev)
             elif ev["type"] == "figure":
                 turn.figures.append(ev)
+            elif ev["type"] == "ask":
+                turn.asks.append(ev)
             elif ev["type"] == "final":
                 turn.response = ev["response"]
         return turn

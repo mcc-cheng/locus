@@ -46,6 +46,9 @@ class MakeChart(_Step):
     value: str | None = None
     aggregate: Aggregate = "count"
     bins: int = 30
+    # Set true only after the user has agreed to proceed despite missing/invalid
+    # values in the plotted columns (see the human-in-the-loop data check).
+    confirm_incomplete: bool = False
 
 
 class RunStat(_Step):
@@ -71,12 +74,34 @@ class MakeFigure(_Step):
     caption: str = ""
 
 
+class CheckData(_Step):
+    """Inspect columns for data-quality problems (missing values, non-numeric
+    entries, distinct counts) — grounded, deterministic findings to reason over
+    before analyzing or charting."""
+
+    kind: Literal["check_data"]
+    section: str
+    table: str = "raw"
+    columns: list[str] = Field(default_factory=list)
+
+
+class AskUser(_Step):
+    """Pause and ask the human a question with clickable options. Use this when a
+    decision is genuinely the user's to make — especially how to handle data
+    problems (e.g. rows with missing values) before proceeding."""
+
+    kind: Literal["ask_user"]
+    question: str
+    options: list[str] = Field(default_factory=list, min_length=1, max_length=4)
+
+
 class Answer(_Step):
     kind: Literal["answer"]
 
 
 AgentStep = Annotated[
-    Union[RunSql, MakeChart, RunStat, MakeFigure, Answer], Field(discriminator="kind")
+    Union[RunSql, MakeChart, RunStat, MakeFigure, CheckData, AskUser, Answer],
+    Field(discriminator="kind"),
 ]
 
 

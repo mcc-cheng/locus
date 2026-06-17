@@ -148,4 +148,85 @@ def test_real_agent_answers_with_data(agent_root):
     root, _ = agent_root
     agent = AnalystAgent(root, OllamaBrain())
     turn = agent.handle("How many rows are in the dataset?")
-    assert turn.response.strip()  # produced a grounded natural-language answer
+    # The model either answers directly or asks a clarifying question — both are
+    # valid end-to-end outcomes (model behavior is nondeterministic).
+    assert turn.response.strip() or turn.asks
+
+
+# ---- human-in-the-loop (data quality) ---------------------------------------
+
+
+def _hitl_root(tmp_path):
+    """A dataset where the 'score' column has a missing value."""
+    from datetime import datetime, timezone
+    from ingest import DeterministicIngestor
+    from warehouse import Warehouse
+
+    csv = "id,grp,score\n1,A,10\n2,A,\n3,B,30\n4,B,40\n"  # row 2 score is missing
+    root = tmp_path / "wh"
+    wh = Warehouse.open(root)
+    p = tmp_path / "m.csv"
+    p.write_text(csv, encoding="utf-8")
+    section = DeterministicIngestor(wh).ingest(p, datetime(2026, 6, 16, tzinfo=timezone.utc)).section
+    wh.close()
+    return root, section
+
+
+def test_chart_gate_asks_when_data_has_missing_values(tmp_path):
+    root, section = _hitl_root(tmp_path)
+    steps = [MakeChart(kind="make_chart", chart_type="histogram", section=section, table="raw", x="score")]
+    turn = _agent(root, steps).handle("make a histogram of score")
+    assert turn.asks, "expected the agent to pause and ask the human"
+    assert "missing" in turn.asks[0]["question"].lower()
+    assert any("exclude" in o.lower() for o in turn.asks[0]["options"])
+    assert not turn.charts  # did NOT silently build
+
+
+def test_chart_proceeds_after_user_confirms(tmp_path):
+    root, section = _hitl_root(tmp_path)
+    steps = [MakeChart(kind="make_chart", chart_type="histogram", section=section, table="raw", x="score")]
+    # The user's message (a clicked option) signals proceeding -> gate passes.
+    turn = _agent(root, steps).handle("Exclude those rows and continue")
+    assert turn.charts, "should build the chart once the user agreed to proceed"
+    assert not turn.asks
+
+
+def test_clean_columns_do_not_trigger_a_question(tmp_path):
+    root, section = _hitl_root(tmp_path)
+    # 'grp' has no missing values -> no gate.
+    steps = [MakeChart(kind="make_chart", chart_type="bar", section=section, table="raw", x="grp")]
+    turn = _agent(root, steps).handle("bar chart of grp")
+    assert turn.charts and not turn.asks
+
+
+def test_ask_user_step_pauses_with_options(tmp_path):
+    root, section = _hitl_root(tmp_path)
+    from agentic.steps import AskUser
+
+    steps = [AskUser(kind="ask_user", question="Which cohort?", options=["A", "B"])]
+    turn = _agent(root, steps).handle("compare cohorts")
+    assert turn.asks and turn.asks[0]["question"] == "Which cohort?"
+    assert turn.asks[0]["options"] == ["A", "B"]
+
+
+def test_check_data_reports_issues(tmp_path):
+    root, section = _hitl_root(tmp_path)
+    from agentic.steps import CheckData
+
+    steps = [CheckData(kind="check_data", section=section, table="raw", columns=["score"])]
+    turn = _agent(root, steps, answer="ok").handle("any problems?")
+    check = next(e for e in turn.events if e["type"] == "step" and e["tool"] == "check_data")
+    assert "1 missing" in check["summary"]
+
+
+def test_chart_column_cast_wrapper_is_normalized(agent_root):
+    # Model sometimes passes TRY_CAST("col" AS DOUBLE) as the column field.
+    root, section = agent_root
+    steps = [
+        MakeChart(kind="make_chart", chart_type="histogram", section=section, table="raw",
+                  x='TRY_CAST("dose" AS DOUBLE)'),
+    ]
+    turn = _agent(root, steps).handle("histogram of dose")
+    assert turn.charts, "cast-wrapped column should be normalized and the chart built"
+    chart_step = next(e for e in turn.events if e["type"] == "step" and e["tool"] == "make_chart")
+    assert "ERROR" not in (chart_step["summary"] or "")

@@ -128,6 +128,7 @@ export type AgentEvent =
   | { type: "step"; tool: "run_sql" | "make_chart" | "run_stat"; thought?: string; sql?: string; summary?: string }
   | { type: "chart"; spec: Record<string, unknown>; chart_request: ChartRequest | null }
   | { type: "figure"; image: string; caption?: string }
+  | { type: "ask"; question: string; options: string[] }
   | { type: "token"; text: string }
   | { type: "final"; response: string }
   | { type: "error"; error: string };

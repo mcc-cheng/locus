@@ -20,11 +20,16 @@ interface Figure {
   image: string;
   caption?: string;
 }
+interface Ask {
+  question: string;
+  options: string[];
+}
 interface AssistantMsg {
   role: "assistant";
   steps: Step[];
   charts: Chart[];
   figures: Figure[];
+  ask?: Ask;
   text: string;
   error?: string | null;
   done?: boolean;
@@ -72,6 +77,9 @@ export function ChatPanel({ onCollapse }: { onCollapse: () => void }) {
       m.charts.push({ spec: e.spec, chartRequest: e.chart_request });
     } else if (e.type === "figure") {
       m.figures.push({ image: e.image, caption: e.caption });
+    } else if (e.type === "ask") {
+      m.ask = { question: e.question, options: e.options };
+      m.done = true;
     } else if (e.type === "token") {
       m.text += e.text;
     } else if (e.type === "final") {
@@ -168,7 +176,14 @@ export function ChatPanel({ onCollapse }: { onCollapse: () => void }) {
               </div>
             </div>
           ) : (
-            <AssistantBubble key={i} msg={m} streaming={streaming} onOpenChart={openInVisualize} />
+            <AssistantBubble
+              key={i}
+              msg={m}
+              streaming={streaming}
+              isLast={i === messages.length - 1}
+              onOpenChart={openInVisualize}
+              onAnswer={send}
+            />
           ),
         )}
       </div>
@@ -204,11 +219,15 @@ export function ChatPanel({ onCollapse }: { onCollapse: () => void }) {
 function AssistantBubble({
   msg,
   streaming,
+  isLast,
   onOpenChart,
+  onAnswer,
 }: {
   msg: AssistantMsg;
   streaming: boolean;
+  isLast: boolean;
   onOpenChart: (r: ChartRequest) => void;
+  onAnswer: (option: string) => void;
 }) {
   const [openSql, setOpenSql] = useState<number | null>(null);
   const working = streaming && !msg.done;
@@ -249,6 +268,25 @@ function AssistantBubble({
           <span className="ml-0.5 inline-block h-3.5 w-1.5 animate-pulse bg-indigo-400 align-middle" />
         )}
       </div>
+
+      {/* Human-in-the-loop question with clickable options */}
+      {msg.ask && (
+        <div className="mt-1">
+          <div className="text-sm font-medium text-slate-800">{msg.ask.question}</div>
+          <div className="mt-2 flex flex-col gap-1.5">
+            {msg.ask.options.map((opt) => (
+              <button
+                key={opt}
+                disabled={!isLast || streaming}
+                onClick={() => onAnswer(opt)}
+                className="rounded-lg border border-indigo-200 bg-indigo-50 px-3 py-2 text-left text-sm font-medium text-indigo-700 transition hover:border-indigo-300 hover:bg-indigo-100 disabled:cursor-not-allowed disabled:opacity-50"
+              >
+                {opt}
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
 
       {/* Figures (matplotlib, for reports) */}
       {msg.figures.map((f, i) => (
