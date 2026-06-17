@@ -12,6 +12,7 @@ Tests inject fakes implementing the ``Brain`` protocol.
 from __future__ import annotations
 
 import os
+import re
 from collections.abc import Iterator
 from typing import Protocol
 
@@ -21,9 +22,26 @@ from ingest.errors import OllamaUnavailableError
 
 from .steps import StepDecision
 
-# Override with LOCUS_AGENT_MODEL — a larger model (e.g. qwen2.5:14b-instruct or
-# qwen2.5:32b-instruct) makes the analyst noticeably smarter for research use.
+# Override with LOCUS_AGENT_MODEL. Works with any Ollama chat model, including the
+# latest Qwen3 family (e.g. qwen3:8b, qwen3:14b, qwen3:30b-a3b) — a larger model
+# makes the analyst noticeably smarter for research use.
 DEFAULT_MODEL = os.environ.get("LOCUS_AGENT_MODEL", "qwen2.5:7b-instruct")
+
+_THINK_RE = re.compile(r"<think>.*?</think>", re.DOTALL | re.IGNORECASE)
+
+
+def _strip_think(text: str) -> str:
+    """Remove any <think>…</think> a hybrid model (e.g. Qwen3) may emit inline."""
+    return _THINK_RE.sub("", text or "").strip()
+
+
+def _think_setting():
+    """LOCUS_AGENT_THINK: off by default (faster, clean output). Set to
+    1/true/on to let thinking models reason, or low|medium|high for a level."""
+    v = os.environ.get("LOCUS_AGENT_THINK", "").strip().lower()
+    if v in ("low", "medium", "high"):
+        return v
+    return v in ("1", "true", "on", "yes")
 
 _SERVER_DOWN = """\
 The analyst needs a local Ollama server, but none is reachable.
@@ -65,6 +83,8 @@ class OllamaBrain:
         # Keep the model resident in Ollama between calls so we don't pay the
         # cold-load penalty on every step — the single biggest latency win.
         self.keep_alive = keep_alive
+        # Thinking (Qwen3 etc.) is off by default for speed + clean output.
+        self.think = _think_setting()
         self._client = client or ollama.Client(host=host)
 
     def warm_up(self) -> None:
@@ -75,6 +95,7 @@ class OllamaBrain:
                 model=self.model,
                 messages=[{"role": "user", "content": "ok"}],
                 keep_alive=self.keep_alive,
+                think=False,
                 options={"num_predict": 1},
             )
         except Exception:
@@ -102,13 +123,16 @@ class OllamaBrain:
                     messages=convo,
                     format=schema,
                     keep_alive=self.keep_alive,
+                    # Force non-thinking for the structured step so we get clean
+                    # schema-valid JSON (no reasoning preamble) regardless of model.
+                    think=False,
                     options={"temperature": self.temperature, "num_predict": 512},
                 )
             except Exception as exc:
                 last_transport = exc
                 continue
             try:
-                return StepDecision.model_validate_json(resp.message.content or "{}")
+                return StepDecision.model_validate_json(_strip_think(resp.message.content or "{}"))
             except Exception as exc:
                 last_parse = exc
                 continue
@@ -124,6 +148,9 @@ class OllamaBrain:
             messages=convo,
             stream=True,
             keep_alive=self.keep_alive,
+            # When thinking is enabled, Ollama keeps reasoning in a separate
+            # `thinking` field — we only stream `content`, so the answer stays clean.
+            think=self.think,
             options={"temperature": self.temperature},
         ):
             piece = chunk.message.content

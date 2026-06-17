@@ -40,9 +40,18 @@ xattr -cr "/Applications/Biomedical Data Aggregator.app"
 ```
 
 **For the AI analyst** (optional): install [Ollama](https://ollama.com/download),
-then run `ollama pull qwen2.5:7b-instruct` once. If Ollama isn't set up, every
-other feature still works — the app will tell you exactly what to do when you
-first use the analyst.
+then pull a model once — `ollama pull qwen2.5:7b-instruct` (default), or a newer/
+bigger model for sharper reasoning, e.g. `ollama pull qwen3:8b`. Choose which one
+the analyst uses with the `LOCUS_AGENT_MODEL` env var:
+
+```bash
+LOCUS_AGENT_MODEL=qwen3:8b ./dev.sh          # use Qwen3
+LOCUS_AGENT_MODEL=qwen3:30b-a3b ./dev.sh     # larger, still fast (MoE)
+LOCUS_AGENT_THINK=1 LOCUS_AGENT_MODEL=qwen3:8b ./dev.sh   # let it "think" (slower)
+```
+
+Thinking models (Qwen3) work out of the box — reasoning is kept out of the
+answer. If Ollama isn't set up, every other feature still works.
 
 ## First launch
 
