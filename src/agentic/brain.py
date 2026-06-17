@@ -22,10 +22,39 @@ from ingest.errors import OllamaUnavailableError
 
 from .steps import StepDecision
 
-# Override with LOCUS_AGENT_MODEL. Works with any Ollama chat model, including the
-# latest Qwen3 family (e.g. qwen3:8b, qwen3:14b, qwen3:30b-a3b) — a larger model
-# makes the analyst noticeably smarter for research use.
-DEFAULT_MODEL = os.environ.get("LOCUS_AGENT_MODEL", "qwen2.5:7b-instruct")
+def _normalize(name: str) -> str:
+    return name[: -len(":latest")] if name.endswith(":latest") else name
+
+
+# When LOCUS_AGENT_MODEL is unset, auto-pick the best installed model in this
+# order (smartest first). Qwen3 reasons better; 30b-a3b is a fast MoE.
+_PREFERRED = [
+    "qwen3:32b",
+    "qwen3:30b-a3b",
+    "qwen3:14b",
+    "qwen3:8b",
+    "qwen2.5:32b-instruct",
+    "qwen2.5:14b-instruct",
+    "qwen2.5:7b-instruct",
+]
+_resolved_model: str | None = None
+
+
+def _resolve_model() -> str:
+    """LOCUS_AGENT_MODEL if set, else the best installed model (cached)."""
+    env = os.environ.get("LOCUS_AGENT_MODEL")
+    if env:
+        return env
+    global _resolved_model
+    if _resolved_model:
+        return _resolved_model
+    try:
+        installed = {_normalize(m.model) for m in ollama.Client().list().models if m.model}
+        _resolved_model = next((p for p in _PREFERRED if p in installed), "qwen2.5:7b-instruct")
+    except Exception:
+        _resolved_model = "qwen2.5:7b-instruct"
+    return _resolved_model
+
 
 _THINK_RE = re.compile(r"<think>.*?</think>", re.DOTALL | re.IGNORECASE)
 
@@ -35,10 +64,16 @@ def _strip_think(text: str) -> str:
     return _THINK_RE.sub("", text or "").strip()
 
 
-def _think_setting():
-    """LOCUS_AGENT_THINK: off by default (faster, clean output). Set to
-    1/true/on to let thinking models reason, or low|medium|high for a level."""
-    v = os.environ.get("LOCUS_AGENT_THINK", "").strip().lower()
+def _answer_think_setting():
+    """Whether the model 'thinks' before writing the final answer. ON by default:
+    on a reasoning model (Qwen3) thinking keeps the chain-of-thought in a separate
+    channel so the answer is clean — with it OFF, Qwen3 dumps its reasoning into
+    the answer text. It's a no-op on non-reasoning models (Qwen2.5). Set
+    LOCUS_AGENT_THINK=0 to force off (faster but answers may be verbose)."""
+    v = os.environ.get("LOCUS_AGENT_THINK")
+    if v is None:
+        return True
+    v = v.strip().lower()
     if v in ("low", "medium", "high"):
         return v
     return v in ("1", "true", "on", "yes")
@@ -62,29 +97,27 @@ class Brain(Protocol):
     def stream_answer(self, system: str, messages: list[dict]) -> Iterator[str]: ...
 
 
-def _normalize(name: str) -> str:
-    return name[: -len(":latest")] if name.endswith(":latest") else name
-
-
 class OllamaBrain:
     def __init__(
         self,
-        model: str = DEFAULT_MODEL,
+        model: str | None = None,
         *,
         host: str | None = None,
         client=None,
         temperature: float = 0.1,
         num_retries: int = 3,
         keep_alive: str = "30m",
+        think: bool | str | None = None,
     ) -> None:
-        self.model = model
+        self.model = model or _resolve_model()
         self.temperature = temperature
         self.num_retries = num_retries
         # Keep the model resident in Ollama between calls so we don't pay the
         # cold-load penalty on every step — the single biggest latency win.
         self.keep_alive = keep_alive
-        # Thinking (Qwen3 etc.) is off by default for speed + clean output.
-        self.think = _think_setting()
+        # Reason before writing the answer (clean on Qwen3; no-op otherwise).
+        # Tool decisions stay non-thinking for speed + clean JSON.
+        self.answer_think = think if think is not None else _answer_think_setting()
         self._client = client or ollama.Client(host=host)
 
     def warm_up(self) -> None:
@@ -150,7 +183,7 @@ class OllamaBrain:
             keep_alive=self.keep_alive,
             # When thinking is enabled, Ollama keeps reasoning in a separate
             # `thinking` field — we only stream `content`, so the answer stays clean.
-            think=self.think,
+            think=self.answer_think,
             options={"temperature": self.temperature},
         ):
             piece = chunk.message.content

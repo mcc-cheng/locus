@@ -146,7 +146,7 @@ def _ollama_ready() -> bool:
 @pytest.mark.skipif(not _ollama_ready(), reason="qwen2.5:7b-instruct not available")
 def test_real_agent_answers_with_data(agent_root):
     root, _ = agent_root
-    agent = AnalystAgent(root, OllamaBrain())
+    agent = AnalystAgent(root, OllamaBrain(think=False))  # think=False keeps the test fast
     turn = agent.handle("How many rows are in the dataset?")
     # The model either answers directly or asks a clarifying question — both are
     # valid end-to-end outcomes (model behavior is nondeterministic).

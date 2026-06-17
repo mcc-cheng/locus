@@ -35,7 +35,7 @@ from .steps import Answer, AskUser, CheckData, MakeChart, MakeFigure, RunSql, Ru
 
 _PROCEED_WORDS = ("proceed", "exclude", "continue", "go ahead", "drop ", "ignore missing", "yes")
 
-MAX_STEPS = 6
+MAX_STEPS = 8
 _PREVIEW_ROWS = 12
 _CELL = 60
 
@@ -56,12 +56,20 @@ Each turn, respond with JSON: {"thought":"...", "step":{...}}. Choose ONE step:
     EXACT column names from the profile. Quote identifiers with DOUBLE QUOTES
     ("cohort"), never backticks. Use single quotes for text literals ('yes').
     To count rows use COUNT(*), not COUNT(DISTINCT ...). Prefer the "raw" table.
+    Useful idioms (all columns are TEXT):
+      • average of a numeric column:  AVG(TRY_CAST("age" AS DOUBLE))
+      • rate/proportion of a category: AVG(CASE WHEN "responder"='yes' THEN 1.0 ELSE 0 END)
+        (or COUNT(*) FILTER (WHERE "responder"='yes') * 1.0 / COUNT(*))
+      • a percentage is that × 100. Group with GROUP BY for per-category results.
 - make_chart: {"kind":"make_chart","chart_type":"histogram|bar|heatmap|dose_response|scatter",
                "section":"...","table":"raw","x":"col","y":"col","color":"col",...}
-    A quick interactive chart (aggregated on the server). Give PLAIN column names
-    (e.g. "score") — never SQL expressions; the server casts numerics for you.
-    If the user already agreed to proceed despite missing values, set
-    "confirm_incomplete": true and do not ask again.
+    A quick interactive chart of EXISTING columns (count, or sum/avg/min/max of a
+    numeric column). Give PLAIN column names (e.g. "score") — never SQL
+    expressions; the server casts numerics for you. If the user already agreed to
+    proceed despite missing values, set "confirm_incomplete": true.
+    For a COMPUTED metric (a rate, proportion, ratio, or any value you derive in
+    SQL), make_chart can't compute it — use make_figure instead (query the metric,
+    then plot it).
 - make_figure:{"kind":"make_figure","code":"...python...","caption":"..."}
     A custom matplotlib figure for a report. In the sandbox, `con`, `pd`, `np`,
     and `plt` are ALREADY defined — do NOT import anything, do NOT call
@@ -113,11 +121,13 @@ If a chart or figure was created successfully (the observation says it is shown 
 the user), present it positively — e.g. "Here is a bar chart of …" — and describe
 what it shows. Do not say you couldn't make it.
 
-Format your answer in clean Markdown:
-- Start directly with the answer — no preamble like "Based on the data".
-- **Bold** the key numbers.
+Output ONLY the final answer — do NOT narrate your reasoning, do NOT restate the
+question, do NOT write "Okay" or "Let me". No <think> blocks.
+
+Format in clean Markdown:
+- Lead with the answer; **bold** the key numbers.
 - Use a short bullet list for breakdowns; a Markdown table for 2+ columns of data.
-- Keep it concise (a few sentences or bullets). If you made a chart, say so briefly.
+- Keep it tight (a few sentences/bullets). If you made a chart, mention it in one line.
 - Never invent numbers you did not observe.
 """
 

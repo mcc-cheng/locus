@@ -40,18 +40,28 @@ xattr -cr "/Applications/Biomedical Data Aggregator.app"
 ```
 
 **For the AI analyst** (optional): install [Ollama](https://ollama.com/download),
-then pull a model once — `ollama pull qwen2.5:7b-instruct` (default), or a newer/
-bigger model for sharper reasoning, e.g. `ollama pull qwen3:8b`. Choose which one
-the analyst uses with the `LOCUS_AGENT_MODEL` env var:
+then pull a model once. The analyst **auto-selects the smartest model you have
+installed** (it prefers `qwen3:30b-a3b` — a large but fast MoE that reasons well —
+then smaller Qwen3, then Qwen2.5, falling back to `qwen2.5:7b-instruct`). So just:
 
 ```bash
-LOCUS_AGENT_MODEL=qwen3:8b ./dev.sh          # use Qwen3
-LOCUS_AGENT_MODEL=qwen3:30b-a3b ./dev.sh     # larger, still fast (MoE)
-LOCUS_AGENT_THINK=1 LOCUS_AGENT_MODEL=qwen3:8b ./dev.sh   # let it "think" (slower)
+ollama pull qwen3:30b-a3b     # recommended — best balance of smart + fast
+# or a lighter option:
+ollama pull qwen3:8b
 ```
 
-Thinking models (Qwen3) work out of the box — reasoning is kept out of the
-answer. If Ollama isn't set up, every other feature still works.
+You can pin a specific model with `LOCUS_AGENT_MODEL`:
+
+```bash
+LOCUS_AGENT_MODEL=qwen3:8b ./dev.sh          # force a particular model
+LOCUS_AGENT_THINK=0 ./dev.sh                 # turn reasoning off (faster, terser)
+```
+
+On a reasoning model (Qwen3) the analyst **thinks before answering by default** —
+the chain-of-thought is kept in a separate channel so the final answer stays
+clean, while accuracy improves. This is a no-op on non-reasoning models (Qwen2.5).
+Set `LOCUS_AGENT_THINK=0` to trade some quality for speed. If Ollama isn't set up,
+every other feature still works.
 
 ## First launch
 
@@ -115,7 +125,7 @@ with a React/TypeScript/Tailwind frontend.
 # backend
 uv venv --python 3.12 .venv
 uv pip install --python .venv/bin/python -e ".[dev,bio,experiments]"
-.venv/bin/python -m pytest                 # 146 tests
+.venv/bin/python -m pytest                 # 160 tests
 .venv/bin/python -m api.sidecar            # run the API locally
 
 # frontend

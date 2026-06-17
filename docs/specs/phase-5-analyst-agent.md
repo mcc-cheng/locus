@@ -9,7 +9,12 @@ answer grounded in what it found. It never writes to the canonical DB.
 
 ## The loop (`analyst.py`)
 
-Each turn runs a short ReAct loop on a local Ollama model (`qwen2.5:7b-instruct`):
+Each turn runs a short ReAct loop on a local Ollama model. The brain
+**auto-selects the smartest installed model** (preferring `qwen3:30b-a3b`, then
+smaller Qwen3, then Qwen2.5; override with `LOCUS_AGENT_MODEL`). On a reasoning
+model it **thinks before the answer phase** (kept in a separate channel so the
+answer stays clean); tool-decision steps always run non-thinking for fast,
+schema-valid JSON. `LOCUS_AGENT_THINK=0` forces non-thinking everywhere.
 
 1. Build a **rich data context** — every dataset's tables, columns, row counts,
    and a few sample rows of `raw` — so the model "sees" the data.
@@ -45,6 +50,9 @@ union (`StepDecision`); the loop executes it — the model never runs anything:
 - **make_chart** → `VisualizationService` (server-aggregated, ≤10k rows).
 - **run_stat** → a *templated* script (model picks test + columns only) in a
   **disposable sandbox**.
+- **make_figure** → free Python (matplotlib/pandas) in a **disposable sandbox**,
+  returning an inline PNG — for report figures of computed metrics that the
+  chart-spec tool can't express. Wrappers/fences/backticks are normalized.
 - **answer** → stop exploring and write the answer.
 
 Because every tool call is validated and runs through the read-only services or a
