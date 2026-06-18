@@ -3,12 +3,16 @@
 Each turn the model proposes ONE step as strict JSON. The loop validates it
 against this union (the model never executes anything) and runs it through the
 read-only services or a sandbox. After gathering observations, the model writes
-a free-form, streamed answer. Four steps:
+a free-form, streamed answer.
 
-  * run_sql    — explore the data with a read-only SELECT
-  * make_chart — build a server-aggregated chart
-  * run_stat   — run a named statistical test in a sandbox
-  * answer     — stop gathering; write the final answer
+Read-only exploration steps: run_sql, make_chart, make_figure, run_stat,
+check_data; plus ask_user (pause for a human decision) and answer (finish).
+
+Mutation steps — edit_data, delete_data, restructure_data — only *propose* a
+change. They are never executed by the loop: the change is shown to the user for
+explicit confirmation and applied deterministically by the API layer only if they
+approve. The agent must propose these only when the user explicitly asks to
+change the data.
 """
 
 from __future__ import annotations
@@ -95,12 +99,61 @@ class AskUser(_Step):
     options: list[str] = Field(default_factory=list, min_length=1, max_length=4)
 
 
+class EditData(_Step):
+    """Propose a value edit to the data (an UPDATE). Use ONLY when the user
+    explicitly asks to change/edit/fix/set values. Nothing happens until the user
+    confirms — this step just proposes the change for their approval."""
+
+    kind: Literal["edit_data"]
+    section: str
+    table: str = "raw"
+    set_column: str = Field(description="The column whose value to change.")
+    set_value: str | None = Field(default=None, description="The new value (a literal).")
+    where: str | None = Field(
+        default=None,
+        description="A boolean SQL expression selecting which rows to change, e.g. "
+        "\"cohort\" = 'control'. Omit to change every row.",
+    )
+
+
+class DeleteData(_Step):
+    """Propose deleting rows (a DELETE). Use ONLY when the user explicitly asks to
+    delete/remove rows. Nothing happens until the user confirms."""
+
+    kind: Literal["delete_data"]
+    section: str
+    table: str = "raw"
+    where: str | None = Field(
+        default=None,
+        description="A boolean SQL expression selecting which rows to delete. "
+        "Omit to delete every row (rarely what they want — be sure).",
+    )
+
+
+class Restructure(_Step):
+    """Propose a structural change to a dataset (add / drop / rename a column).
+    Use ONLY when the user explicitly asks to restructure the data. Nothing
+    happens until the user confirms."""
+
+    kind: Literal["restructure_data"]
+    operation: Literal["add_column", "drop_column", "rename_column"]
+    section: str
+    table: str = "raw"
+    column: str = Field(description="The column to add, drop, or rename.")
+    new_name: str | None = Field(
+        default=None, description="For rename_column: the new column name."
+    )
+
+
 class Answer(_Step):
     kind: Literal["answer"]
 
 
 AgentStep = Annotated[
-    Union[RunSql, MakeChart, RunStat, MakeFigure, CheckData, AskUser, Answer],
+    Union[
+        RunSql, MakeChart, RunStat, MakeFigure, CheckData, AskUser,
+        EditData, DeleteData, Restructure, Answer,
+    ],
     Field(discriminator="kind"),
 ]
 

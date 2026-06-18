@@ -3,6 +3,7 @@ import type {
   ChartRequest,
   ChartSuggestion,
   ChatTurn,
+  MutationAction,
   DepsHealth,
   Envelope,
   IngestResult,
@@ -130,16 +131,18 @@ export const api = {
   artifactUrl: (id: string, runId: string, name: string) =>
     `${API_BASE}/sandboxes/${encodeURIComponent(id)}/artifacts/${encodeURIComponent(runId)}/${encodeURIComponent(name)}`,
 
-  /** Stream the agent's NDJSON response, invoking `onEvent` per line. */
+  /** Stream the agent's NDJSON response, invoking `onEvent` per line. Pass
+   * `confirm` (a previewed MutationAction) to execute a user-approved change. */
   async agentChat(
     message: string,
     history: ChatTurn[],
     onEvent: (e: AgentEvent) => void,
+    confirm?: MutationAction,
   ): Promise<void> {
     const res = await fetch(`${API_BASE}/agent/chat`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ message, history }),
+      body: JSON.stringify({ message, history, confirm: confirm ?? null }),
     });
     if (!res.body) throw new Error("no response stream");
     const reader = res.body.getReader();

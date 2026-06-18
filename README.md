@@ -12,15 +12,18 @@ original files are preserved byte-for-byte and never altered.
 
 ## Why Locus
 
-- **Your data is never changed.** Every value is stored exactly as you typed it —
-  no rounding, no reformatting, no dropped rows. Locus keeps a verbatim copy of
-  each file you upload and checks it on every launch.
+- **Your original is never changed.** Every value is ingested exactly as you typed
+  it — no rounding, no reformatting, no dropped rows. Locus keeps a verbatim copy
+  of each file you upload and checks it on every launch, so even after you edit the
+  working data it stays recoverable.
 - **Provably faithful.** Before any upload is finalized, Locus runs a battery of
   checks proving the structured version reconstructs your original data exactly.
   If anything wouldn't match, the upload is rejected — never silently "fixed."
 - **Ask questions in plain English.** A built-in analyst (running a local AI model
-  on your machine) can query your data, build charts, and run statistics for you —
-  and it can only *read* your data, never modify it.
+  on your machine) can query your data, build charts, and run statistics for you.
+  It can also edit, delete, or restructure your data when you ask it to — but
+  *only* when you ask, and *only* after you confirm the exact change; it never
+  modifies anything on its own, and your original upload is always preserved.
 - **Experiment safely.** Run Python, pandas, and scikit-learn against a disposable
   copy of your data. Nothing you do in the sandbox can touch your originals.
 - **Everything stays local.** No cloud, no uploads to a server. Your data and the
@@ -102,8 +105,15 @@ underlying chart definition and save the image as PNG or SVG.
 Click **Ask the analyst** (bottom-right). Type a question like *"How many
 compounds are in each category?"* or *"Plot dose against response."* The analyst
 will answer, and show you exactly the query or chart it used. If it made a chart,
-you can open it in the Visualize tab with one click. The analyst has **read-only**
-access — it can explore your data but never change it.
+you can open it in the Visualize tab with one click.
+
+**Asking it to change data.** You can also tell the analyst to edit, delete, or
+restructure data — e.g. *"delete the rows where cohort is control"*, *"set bmi to
+0 where it's missing"*, or *"rename the column dose to dose_mg"*. The analyst
+never changes anything by itself: it shows you the exact change (the statement it
+will run and how many rows it affects) with **Confirm** / **Cancel** buttons, and
+applies it only after you click Confirm. Your original uploaded file is always
+preserved byte-for-byte, so any edit is recoverable.
 
 ## Running a sandbox experiment
 
@@ -125,7 +135,7 @@ with a React/TypeScript/Tailwind frontend.
 # backend
 uv venv --python 3.12 .venv
 uv pip install --python .venv/bin/python -e ".[dev,bio,experiments]"
-.venv/bin/python -m pytest                 # 160 tests
+.venv/bin/python -m pytest                 # 173 tests
 .venv/bin/python -m api.sidecar            # run the API locally
 
 # frontend

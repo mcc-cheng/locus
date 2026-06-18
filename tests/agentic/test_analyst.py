@@ -219,6 +219,67 @@ def test_check_data_reports_issues(tmp_path):
     assert "1 missing" in check["summary"]
 
 
+# ---- data mutations (propose -> confirm; never auto-applied) ----------------
+
+
+def test_delete_proposes_confirmation_and_does_not_write(agent_root):
+    root, section = agent_root
+    from agentic.steps import DeleteData
+    from warehouse import sha256_file
+
+    canonical = root / "warehouse.duckdb"
+    before = sha256_file(canonical)
+    steps = [DeleteData(kind="delete_data", section=section, where='"grp" = \'A\'')]
+    turn = _agent(root, steps).handle("delete the rows where grp is A")
+    # It proposes a confirmation (with the affected count) and ends the turn...
+    assert turn.confirms, "expected a confirm event"
+    c = turn.confirms[0]
+    assert c["affected"] == 3  # three rows have grp = A
+    assert c["action"]["op"] == "delete"
+    assert any("3 rows" in o for o in c["options"])
+    # ...and nothing was written to the canonical DB.
+    assert sha256_file(canonical) == before
+    assert not turn.response  # turn ended awaiting confirmation
+
+
+def test_edit_proposes_confirmation(agent_root):
+    root, section = agent_root
+    from agentic.steps import EditData
+
+    steps = [
+        EditData(kind="edit_data", section=section, set_column="grp",
+                 set_value="C", where='"grp" = \'B\''),
+    ]
+    turn = _agent(root, steps).handle("change grp to C where grp is B")
+    assert turn.confirms and turn.confirms[0]["action"]["op"] == "update"
+    assert turn.confirms[0]["affected"] == 3
+
+
+def test_restructure_proposes_confirmation(agent_root):
+    root, section = agent_root
+    from agentic.steps import Restructure
+
+    steps = [Restructure(kind="restructure_data", operation="drop_column",
+                         section=section, column="response")]
+    turn = _agent(root, steps).handle("drop the response column")
+    assert turn.confirms
+    assert turn.confirms[0]["action"]["op"] == "drop_column"
+    assert turn.confirms[0]["affected"] is None  # schema change, not row-scoped
+
+
+def test_mutation_blocked_without_user_intent(agent_root):
+    # The model proposes a delete but the user only asked a question -> refused.
+    root, section = agent_root
+    from agentic.steps import DeleteData
+
+    steps = [DeleteData(kind="delete_data", section=section, where='"grp" = \'A\'')]
+    turn = _agent(root, steps, answer="There are 6 rows.").handle("how many rows are there?")
+    assert not turn.confirms, "must not propose a change the user didn't ask for"
+    blocked = [e for e in turn.events if e.get("tool") == "blocked_mutation"]
+    assert blocked, "expected the mutation to be blocked"
+    assert turn.response  # it falls back to answering read-only
+
+
 def test_chart_column_cast_wrapper_is_normalized(agent_root):
     # Model sometimes passes TRY_CAST("col" AS DOUBLE) as the column field.
     root, section = agent_root

@@ -3,9 +3,11 @@
 **Status:** implemented (redesigned from one-shot to a multi-step ReAct loop)
 **Modules:** `src/agentic/{steps,brain,analyst,stats}.py`, `/agent/chat` in `api/rest/app.py`
 
-A chat agent with **read-only** access that genuinely understands the data: it
-explores with tools, observes results, iterates, and writes a fluent, **streamed**
-answer grounded in what it found. It never writes to the canonical DB.
+A chat agent that genuinely understands the data: it explores with read-only
+tools, observes results, iterates, and writes a fluent, **streamed** answer
+grounded in what it found. It can also change the data — but only when the user
+explicitly asks and only after they confirm (see "Mutations" below); the loop
+itself has no write path.
 
 ## The loop (`analyst.py`)
 
@@ -40,6 +42,31 @@ Real lab data has errors; the agent must not silently skip them.
   the agent raise questions proactively. `ask` events stream to the UI as
   buttons; clicking one sends it as the next message (stateless history).
 - Chart column fields are normalized (stray `TRY_CAST(...)`/quotes stripped).
+
+## Mutations (edit / delete / restructure) — propose, confirm, apply
+
+The user can ask the analyst to change data ("delete the rows where …", "set bmi
+to 0 where …", "rename column dose to dose_mg"). The agent must never change data
+on its own; three guarantees enforce that:
+
+1. **The LLM loop has no write path.** The mutation steps `edit_data`,
+   `delete_data`, and `restructure_data` only *propose* a change — the loop builds
+   a structured `MutationAction`, previews it (counts affected rows for
+   update/delete), emits a `confirm` event with the exact SQL + Confirm/Cancel
+   options, and ends the turn. Nothing is executed.
+2. **Human confirmation, applied deterministically.** Clicking Confirm
+   round-trips the exact previewed `MutationAction` back via
+   `POST /agent/chat {confirm: …}`. The API executes it directly through
+   `warehouse.mutate` (parameterized UPDATE/DELETE/ALTER) — the model is *not*
+   re-run, so the applied change cannot drift from what the user approved. It
+   streams a `mutation` result event then a `final` confirmation message.
+3. **Intent backstop.** Even before the confirm gate, the loop refuses to propose
+   a change unless the user's own message contains change intent (delete, edit,
+   set, rename, drop column, …); otherwise it answers read-only.
+
+The **preserved source copy** is never touched by a mutation, so the original
+upload stays byte-for-byte recoverable. `run_sql` remains SELECT-only — DML there
+is still rejected (verified by `test_agent_never_writes_canonical`).
 
 ## Tools — strict, validated (`steps.py`)
 

@@ -25,6 +25,8 @@ from fastapi.responses import FileResponse, StreamingResponse
 from pydantic import BaseModel
 
 from agentic import AnalystAgent, OllamaBrain
+from agentic.mutation import MutationAction
+from agentic.mutation import apply as apply_mutation
 from executor import SandboxLimits, SandboxManager, SandboxRunResult, run_notebook, run_script
 from ingest import (
     AgenticIngestor,
@@ -58,6 +60,10 @@ class QueryBody(BaseModel):
 class AgentChatBody(BaseModel):
     message: str
     history: list[dict] = []  # full conversation passed each request; no server session
+    # Present only when the user clicked "Confirm" on a proposed data change. The
+    # exact action the agent previewed is round-tripped back and executed
+    # deterministically here — the LLM is never re-run to perform the change.
+    confirm: MutationAction | None = None
 
 
 class RowAppendBody(BaseModel):
@@ -378,6 +384,13 @@ def create_app(root: str | Path, *, brain_factory=None) -> FastAPI:
             # charts, answer tokens). We hold the warehouse lock for the turn
             # because the agent opens read-only services/clones.
             with state.lock:
+                # Confirmed data change: execute the exact previewed action
+                # deterministically (no LLM). This is the ONLY write path the chat
+                # endpoint has, and it runs only because the user clicked Confirm.
+                if body.confirm is not None:
+                    for event in _apply_confirmed_mutation(state, body.confirm):
+                        yield _line(event)
+                    return
                 agent = AnalystAgent(
                     state.root, state.brain_factory(), sandbox_manager=state.sandboxes
                 )
@@ -395,6 +408,26 @@ def create_app(root: str | Path, *, brain_factory=None) -> FastAPI:
         return ok({"deleted": sandbox_id})
 
     return app
+
+
+def _apply_confirmed_mutation(state, action: MutationAction) -> list[dict]:
+    """Execute a user-confirmed data change and return the chat events to stream
+    (a ``mutation`` result the UI can act on, plus a ``final`` confirming message).
+    The preserved source copy is never touched, so originals stay recoverable."""
+    wh = Warehouse.open(state.root, verify_sources=False)
+    try:
+        result = apply_mutation(wh.con, action)
+    except (ValueError, SectionNotFoundError) as exc:
+        return [{"type": "error", "error": f"Could not apply the change: {exc}"}]
+    except Exception as exc:  # noqa: BLE001 — surface DB errors to the user, don't crash the stream
+        return [{"type": "error", "error": f"Could not apply the change: {exc}"}]
+    finally:
+        wh.close()
+    msg = result["summary"] + " Your original uploaded file is unchanged."
+    return [
+        {"type": "mutation", "section": action.section, **result},
+        {"type": "final", "response": msg},
+    ]
 
 
 def _parse_biopack(raw: str | None) -> dict[str, str] | None:

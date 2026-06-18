@@ -1,6 +1,6 @@
 import { useRef, useState } from "react";
 import { api } from "../api/client";
-import type { AgentEvent, ChartRequest, ChatTurn } from "../api/types";
+import type { AgentEvent, ChartRequest, ChatTurn, MutationAction } from "../api/types";
 import { useApp } from "../store";
 import { VegaChart } from "../components/VegaChart";
 import { Markdown } from "../components/Markdown";
@@ -24,12 +24,21 @@ interface Ask {
   question: string;
   options: string[];
 }
+interface Confirm {
+  summary: string;
+  detail: string;
+  note?: string;
+  affected: number | null;
+  action: MutationAction;
+  options: string[];
+}
 interface AssistantMsg {
   role: "assistant";
   steps: Step[];
   charts: Chart[];
   figures: Figure[];
   ask?: Ask;
+  confirm?: Confirm;
   text: string;
   error?: string | null;
   done?: boolean;
@@ -47,10 +56,12 @@ const TOOL_LABEL: Record<string, string> = {
   run_sql: "Queried the data",
   make_chart: "Built a chart",
   run_stat: "Ran a statistical test",
+  propose_change: "Proposed a data change",
+  blocked_mutation: "Declined to change data",
 };
 
 export function ChatPanel({ onCollapse }: { onCollapse: () => void }) {
-  const { openInVisualize } = useApp();
+  const { openInVisualize, refreshSchema } = useApp();
   const [messages, setMessages] = useState<Msg[]>([]);
   const [input, setInput] = useState("");
   const [streaming, setStreaming] = useState(false);
@@ -80,6 +91,18 @@ export function ChatPanel({ onCollapse }: { onCollapse: () => void }) {
     } else if (e.type === "ask") {
       m.ask = { question: e.question, options: e.options };
       m.done = true;
+    } else if (e.type === "confirm") {
+      m.confirm = {
+        summary: e.summary,
+        detail: e.detail,
+        note: e.note,
+        affected: e.affected,
+        action: e.action,
+        options: e.options,
+      };
+      m.done = true;
+    } else if (e.type === "mutation") {
+      m.text = m.text || e.summary;
     } else if (e.type === "token") {
       m.text += e.text;
     } else if (e.type === "final") {
@@ -127,6 +150,52 @@ export function ChatPanel({ onCollapse }: { onCollapse: () => void }) {
     }
   }
 
+  // Execute a user-approved data change. Runs the EXACT previewed action
+  // server-side (no model), then refreshes so the Data tab reflects the change.
+  async function runConfirm(action: MutationAction, label: string) {
+    if (streaming) return;
+    setMessages((m) => [
+      ...m,
+      { role: "user", text: label },
+      { role: "assistant", steps: [], charts: [], figures: [], text: "" },
+    ]);
+    setStreaming(true);
+    scrollDown();
+    try {
+      await api.agentChat(
+        "",
+        [],
+        (e) => {
+          if (e.type === "mutation") refreshSchema();
+          pushEvent(e);
+          scrollDown();
+        },
+        action,
+      );
+    } catch (err) {
+      pushEvent({ type: "error", error: String((err as Error).message) });
+    } finally {
+      setStreaming(false);
+      scrollDown();
+    }
+  }
+
+  function cancelConfirm() {
+    setMessages((m) => [
+      ...m,
+      { role: "user", text: "Cancel" },
+      {
+        role: "assistant",
+        steps: [],
+        charts: [],
+        figures: [],
+        text: "No changes were made.",
+        done: true,
+      },
+    ]);
+    scrollDown();
+  }
+
   return (
     <div className="flex h-full flex-col">
       <header className="flex items-center justify-between border-b border-slate-200 px-4 py-3">
@@ -153,7 +222,8 @@ export function ChatPanel({ onCollapse }: { onCollapse: () => void }) {
           <div className="pt-4">
             <p className="text-sm text-slate-500">
               I read your data, run queries and stats, and build charts to answer your
-              questions — and I never change your originals.
+              questions. I can also edit, delete, or restructure data when you ask —
+              but only after you confirm, and your original upload is always preserved.
             </p>
             <div className="mt-4 space-y-2">
               {SUGGESTIONS.map((s) => (
@@ -183,6 +253,8 @@ export function ChatPanel({ onCollapse }: { onCollapse: () => void }) {
               isLast={i === messages.length - 1}
               onOpenChart={openInVisualize}
               onAnswer={send}
+              onConfirm={runConfirm}
+              onCancel={cancelConfirm}
             />
           ),
         )}
@@ -222,12 +294,16 @@ function AssistantBubble({
   isLast,
   onOpenChart,
   onAnswer,
+  onConfirm,
+  onCancel,
 }: {
   msg: AssistantMsg;
   streaming: boolean;
   isLast: boolean;
   onOpenChart: (r: ChartRequest) => void;
   onAnswer: (option: string) => void;
+  onConfirm: (action: MutationAction, label: string) => void;
+  onCancel: () => void;
 }) {
   const [openSql, setOpenSql] = useState<number | null>(null);
   const working = streaming && !msg.done;
@@ -287,6 +363,46 @@ function AssistantBubble({
           </div>
         </div>
       )}
+
+      {/* Proposed data change — requires an explicit confirm click */}
+      {msg.confirm &&
+        (() => {
+          const destructive = msg.confirm.action.op === "delete";
+          const confirmLabel = msg.confirm.options[0] ?? "Confirm";
+          const disabled = !isLast || streaming;
+          return (
+            <div className="mt-1.5 rounded-lg border border-amber-200 bg-amber-50/70 p-3">
+              <div className="text-sm font-medium text-slate-800">{msg.confirm.summary}</div>
+              {msg.confirm.note && (
+                <div className="mt-1 text-[11px] text-slate-500">{msg.confirm.note}</div>
+              )}
+              <pre className="mt-2 overflow-auto rounded bg-slate-900 p-2 text-[10px] text-slate-100">
+                {msg.confirm.detail}
+              </pre>
+              <div className="mt-2.5 flex gap-2">
+                <button
+                  disabled={disabled}
+                  onClick={() => onConfirm(msg.confirm!.action, confirmLabel)}
+                  className={
+                    "rounded-lg px-3 py-1.5 text-sm font-medium text-white transition disabled:cursor-not-allowed disabled:opacity-50 " +
+                    (destructive
+                      ? "bg-red-600 hover:bg-red-500"
+                      : "bg-indigo-600 hover:bg-indigo-500")
+                  }
+                >
+                  {confirmLabel}
+                </button>
+                <button
+                  disabled={disabled}
+                  onClick={onCancel}
+                  className="rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-sm font-medium text-slate-600 transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50"
+                >
+                  Cancel
+                </button>
+              </div>
+            </div>
+          );
+        })()}
 
       {/* Figures (matplotlib, for reports) */}
       {msg.figures.map((f, i) => (

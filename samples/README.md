@@ -13,6 +13,31 @@ Regenerate with `python samples/generate_samples.py`.
 | `measurements.csv` | 2500 | **Scatter** + **pagination** (large table) |
 | `edge_cases.csv` | 200 | Proves **verbatim storage** — nothing gets "cleaned" |
 
+## Statistical-test datasets
+
+Each of these is built for one specific test, with a **real effect baked in** (or
+a deliberate null) so the test produces a meaningful result. Named after the test
+a researcher would run. Regenerate with `python samples/generate_stats_datasets.py`.
+
+| File | Rows | Test | How to use it | Verified result |
+|------|-----:|------|---------------|-----------------|
+| `ttest_independent_drug_vs_placebo.csv` | 260 | **Independent two-sample t-test** | `systolic_bp_change_mmhg` by `arm` (drug vs placebo) | drug −12.1 vs placebo −2.2, p≈1e-22 |
+| `ttest_paired_weight_before_after.csv` | 160 | **Paired t-test** | `weight_kg_before` vs `weight_kg_after` (same subjects) | −3.25 kg, p≈1e-32 |
+| `ttest_onesample_resting_heart_rate.csv` | 140 | **One-sample t-test** | `resting_heart_rate_bpm` vs the reference mean 72 | μ=76.2, p≈3e-8 |
+| `anova_oneway_dose_tumor_volume.csv` | 240 | **One-way ANOVA** | `tumor_volume_mm3` across 4 `dose_group`s | F≈251, p≈4e-73 |
+| `anova_twoway_drug_sex_response.csv` | 220 | **Two-way ANOVA** (with interaction) | `biomarker_response` by `drug` × `sex` | drug B works better in females |
+| `mannwhitney_postop_pain_score.csv` | 240 | **Mann-Whitney U** (nonparametric) | ordinal `pain_score_0_10` by `analgesic` | opioid med 4 vs nsaid 6, p≈4e-23 |
+| `kruskalwallis_length_of_stay_by_ward.csv` | 270 | **Kruskal-Wallis** (nonparametric ANOVA) | skewed `length_of_stay_days` across 3 `ward`s | H≈84, p≈6e-19 |
+| `chisquare_treatment_recovery.csv` | 340 | **Chi-square test of independence** | `treatment` × `outcome` contingency (1 patient/row) | χ²≈33, p≈8e-9 |
+| `fisher_exact_severe_adverse_event.csv` | 48 | **Fisher's exact test** (small counts) | `group` × `severe_adverse_event`; n too small for χ² | 9/24 vs 1/24, OR≈14, p≈0.01 |
+| `correlation_dose_plasma_concentration.csv` | 220 | **Pearson correlation / linear regression** | `dose_mg` vs `plasma_concentration_ug_ml` | r≈0.97, p≈6e-140 |
+| `logistic_regression_lung_disease.csv` | 300 | **Logistic regression** | binary `lung_disease` ~ `age` + `smoker`/`pack_years` | disease 18% smokers vs 4% non |
+| `survival_logrank_treatment.csv` | 220 | **Log-rank / Kaplan-Meier** | `time_months` + `event` (1=death, 0=censored) by `arm` | median 31 vs 18 months |
+
+Ask the analyst directly, e.g. *"Run an independent t-test of systolic_bp_change
+by arm"* or *"Is treatment associated with recovery?"* — it picks the test, runs
+it in the sandbox, and reports the statistic and p-value.
+
 ## Things to try
 
 ### `compounds.csv` — biopack + the analyst

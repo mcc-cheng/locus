@@ -123,12 +123,34 @@ export interface DepsHealth {
   ollama: { status: "ready" | "unavailable"; detail?: string };
 }
 
+// A data change the agent proposes; executed only after the user confirms.
+export interface MutationAction {
+  op: "update" | "delete" | "add_column" | "drop_column" | "rename_column";
+  section: string;
+  table?: string;
+  set_column?: string | null;
+  set_value?: string | null;
+  where?: string | null;
+  column?: string | null;
+  new_name?: string | null;
+}
+
 // Streaming agent events (NDJSON).
 export type AgentEvent =
-  | { type: "step"; tool: "run_sql" | "make_chart" | "run_stat"; thought?: string; sql?: string; summary?: string }
+  | { type: "step"; tool: string; thought?: string; sql?: string; summary?: string }
   | { type: "chart"; spec: Record<string, unknown>; chart_request: ChartRequest | null }
   | { type: "figure"; image: string; caption?: string }
   | { type: "ask"; question: string; options: string[] }
+  | {
+      type: "confirm";
+      summary: string;
+      detail: string;
+      note?: string;
+      affected: number | null;
+      action: MutationAction;
+      options: string[];
+    }
+  | { type: "mutation"; section: string; op: string; rows_affected?: number; summary: string }
   | { type: "token"; text: string }
   | { type: "final"; response: string }
   | { type: "error"; error: string };

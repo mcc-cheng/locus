@@ -5,10 +5,12 @@ a rich description of the datasets, issues validated read-only tools (SQL,
 charts, statistics), observes the results, iterates, and finally writes a fluent,
 streamed natural-language answer grounded in what it actually found.
 
-Security is unchanged from the strict design: every tool call is validated and
-executed through the read-only services (SELECT-only queries, server-aggregated
-charts) or a disposable sandbox (statistics). The model never touches data
-directly and can never modify the canonical warehouse.
+Security: exploration tools are validated and executed through the read-only
+services (SELECT-only queries, server-aggregated charts) or a disposable sandbox
+(statistics) — the model never touches data directly. The model can also *propose*
+data changes (edit/delete/restructure), but it can NEVER execute them: a proposed
+change is shown to the user for explicit confirmation and applied deterministically
+by the API layer only if they approve. The loop here has no write path at all.
 
 ``run()`` yields events for streaming; ``handle()`` collects a turn for tests.
 """
@@ -30,10 +32,31 @@ from services import (
 )
 
 from .brain import AgentError, Brain
+from .mutation import MutationAction
 from .stats import build_stat_script, parse_stat_output
-from .steps import Answer, AskUser, CheckData, MakeChart, MakeFigure, RunSql, RunStat
+from .steps import (
+    Answer,
+    AskUser,
+    CheckData,
+    DeleteData,
+    EditData,
+    MakeChart,
+    MakeFigure,
+    Restructure,
+    RunSql,
+    RunStat,
+)
 
 _PROCEED_WORDS = ("proceed", "exclude", "continue", "go ahead", "drop ", "ignore missing", "yes")
+
+# A mutation is only ever proposed when the user's own message asks for a change.
+# This is a backstop in front of the (mandatory) human confirmation gate, so the
+# agent never even proposes editing data the user didn't ask to change.
+_MUTATE_INTENT = (
+    "delete", "remove", "drop ", "edit", "change", "update", "set ", "modify",
+    "rename", "fix", "replace", "overwrite", "clear", "wipe", "correct",
+    "add column", "add a column", "new column", "restructure", "rename column",
+)
 
 MAX_STEPS = 8
 _PREVIEW_ROWS = 12
@@ -41,8 +64,10 @@ _CELL = 60
 
 _TOOLS_DOC = """\
 You are Locus's data analyst, helping a scientist explore their datasets and
-write up findings. Explore the data YOURSELF with tools before answering. You
-have READ-ONLY access and can never change the data.
+write up findings. Explore the data YOURSELF with tools before answering. By
+default you only READ the data. You may also PROPOSE changes to the data (edit,
+delete, restructure) — but ONLY when the user explicitly asks you to change it,
+and every proposed change must be confirmed by the user before anything happens.
 
 CRITICAL — every column is stored as TEXT (VARCHAR). For ANY numeric work
 (AVG, SUM, MIN, MAX, comparisons, math) you MUST cast: TRY_CAST("col" AS DOUBLE).
@@ -90,6 +115,24 @@ Each turn, respond with JSON: {"thought":"...", "step":{...}}. Choose ONE step:
     PAUSE and ask the human, offering 2-4 short clickable options. This ends your
     turn until they choose.
 - answer:     {"kind":"answer"}   Stop exploring and write the final answer.
+
+Changing data — ONLY when the user explicitly asks (e.g. "delete the rows where…",
+"set bmi to 0 for…", "rename the column…", "drop the column…"). These steps do NOT
+change anything by themselves: they PROPOSE a change that the user must confirm
+with a button click. Never propose a change the user didn't ask for; if they only
+asked a question, just answer it.
+- edit_data:  {"kind":"edit_data","section":"...","table":"raw","set_column":"col",
+               "set_value":"...","where":"\"cohort\" = 'control'"}
+    Change a column's value for matching rows (omit "where" to change all rows).
+- delete_data:{"kind":"delete_data","section":"...","table":"raw",
+               "where":"TRY_CAST(\"age\" AS DOUBLE) > 90"}
+    Delete matching rows ("where" is a boolean SQL expression; quote identifiers
+    with double quotes and text with single quotes).
+- restructure_data:{"kind":"restructure_data","operation":"add_column|drop_column|rename_column",
+               "section":"...","column":"col","new_name":"..."}
+    Add, drop, or rename a column (new_name only for rename_column).
+After proposing one change step, STOP — do not also answer; the confirmation
+prompt is shown to the user automatically.
 
 Human-in-the-loop — real lab data has errors; never silently skip them:
 - The profile flags columns with nulls. If the user asks to chart/analyze a column
@@ -140,6 +183,7 @@ class AgentTurn:
     charts: list[dict] = field(default_factory=list)
     figures: list[dict] = field(default_factory=list)
     asks: list[dict] = field(default_factory=list)
+    confirms: list[dict] = field(default_factory=list)
     error: str | None = None
 
 
@@ -423,6 +467,56 @@ class AnalystAgent:
         finally:
             self.sandboxes.delete(handle.id)
 
+    # ---- mutations (propose only; never executed here) -------------------
+
+    def _mutation_action(self, step) -> MutationAction:
+        """Translate a proposed mutation tool step into a structured action."""
+        if isinstance(step, EditData):
+            return MutationAction(
+                op="update", section=step.section, table=step.table,
+                set_column=step.set_column, set_value=step.set_value, where=step.where,
+            )
+        if isinstance(step, DeleteData):
+            return MutationAction(
+                op="delete", section=step.section, table=step.table, where=step.where
+            )
+        # Restructure
+        return MutationAction(
+            op=step.operation, section=step.section, table=step.table,
+            column=step.column, new_name=step.new_name,
+        )
+
+    def _confirm_event(self, action: MutationAction) -> dict:
+        """Build the confirmation prompt for a proposed change. For row-scoped
+        edits/deletes we count the affected rows first so the user sees the blast
+        radius before approving."""
+        affected: int | None = None
+        if action.is_row_scoped():
+            where = "" if not action.where else f" WHERE {action.where.replace('`', chr(34))}"
+            try:
+                res = self._query_service().run(
+                    f'SELECT COUNT(*) AS n FROM "{action.section}"."{action.table}"{where}',
+                    page_size=1,
+                )
+                affected = int(res.rows[0][0]) if res.rows else 0
+            except ServiceError:
+                affected = None
+        verb = "Delete" if action.op == "delete" else "Apply change"
+        return {
+            "type": "confirm",
+            "summary": action.describe(affected),
+            "detail": action.preview_sql(),
+            "note": "Your original uploaded file stays intact and recoverable.",
+            "affected": affected,
+            "action": action.model_dump(),
+            "options": [
+                (f"{verb}" if affected is None else f"{verb} ({affected} rows)")
+                if action.is_row_scoped()
+                else "Confirm this change",
+                "Cancel",
+            ],
+        }
+
     # ---- the loop --------------------------------------------------------
 
     def run(self, message: str, history: list[dict] | None = None) -> Iterator[dict]:
@@ -559,6 +653,33 @@ class AnalystAgent:
                     }
                     msgs.append({"role": "assistant", "content": "make_figure"})
                     msgs.append({"role": "user", "content": f"Observation: {obs}"})
+                elif isinstance(step, (EditData, DeleteData, Restructure)):
+                    # Backstop: only ever PROPOSE a change the user explicitly asked
+                    # for. If their message has no change-intent, refuse to mutate
+                    # and steer the model back to answering read-only.
+                    if not any(w in self._message.lower() for w in _MUTATE_INTENT):
+                        obs = (
+                            "Refused: the user did not ask to change the data, so data "
+                            "changes are not allowed. Answer their question using read-only "
+                            "tools instead."
+                        )
+                        yield {
+                            "type": "step", "tool": "blocked_mutation",
+                            "thought": decision.thought, "summary": obs,
+                        }
+                        msgs.append({"role": "assistant", "content": "(attempted a data change)"})
+                        msgs.append({"role": "user", "content": obs})
+                        continue
+                    action = self._mutation_action(step)
+                    yield {
+                        "type": "step", "tool": "propose_change",
+                        "thought": decision.thought, "summary": action.describe(),
+                    }
+                    # Propose only — the change is NOT executed here. It is shown to
+                    # the user for confirmation and applied by the API layer only if
+                    # they approve. End the turn awaiting their decision.
+                    yield self._confirm_event(action)
+                    return
 
             # Answer phase — stream the grounded final answer.
             answer_msgs = msgs + [
@@ -590,6 +711,8 @@ class AnalystAgent:
                 turn.figures.append(ev)
             elif ev["type"] == "ask":
                 turn.asks.append(ev)
+            elif ev["type"] == "confirm":
+                turn.confirms.append(ev)
             elif ev["type"] == "final":
                 turn.response = ev["response"]
         return turn
