@@ -250,16 +250,31 @@ class AnalystAgent:
 
     # ---- data context ----------------------------------------------------
 
-    def _context(self) -> str:
+    def _context(self, section: str | None = None) -> str:
         with SchemaService.open(self.root) as svc:
             datasets = svc.list_datasets()
         if not datasets:
             return "No datasets have been uploaded yet."
+        # Scope to a single dataset when the user has one selected, so the agent
+        # focuses on the data they're actually working in (and uses its section).
+        if section is not None:
+            scoped = [d for d in datasets if d.name == section]
+            if scoped:
+                datasets = scoped
         qs = self._query_service()
-        lines = [
-            "The user has these datasets. Use the EXACT section/table/column names. "
-            "All values are stored as TEXT — cast numeric columns with TRY_CAST."
-        ]
+        if section is not None and len(datasets) == 1:
+            d0 = datasets[0]
+            lines = [
+                f'You are working in ONE dataset: section "{d0.name}" '
+                f"(from file {d0.source_filename}). Use this section in every tool; "
+                "do not reference any other dataset. All values are stored as TEXT — "
+                "cast numeric columns with TRY_CAST."
+            ]
+        else:
+            lines = [
+                "The user has these datasets. Use the EXACT section/table/column names. "
+                "All values are stored as TEXT — cast numeric columns with TRY_CAST."
+            ]
         for d in datasets:
             raw = next((t for t in d.tables if t.name == "raw"), d.tables[0])
             other = [t.name for t in d.tables if t.name != raw.name]
@@ -519,7 +534,9 @@ class AnalystAgent:
 
     # ---- the loop --------------------------------------------------------
 
-    def run(self, message: str, history: list[dict] | None = None) -> Iterator[dict]:
+    def run(
+        self, message: str, history: list[dict] | None = None, section: str | None = None
+    ) -> Iterator[dict]:
         history = history or []
         try:
             self.brain.ensure_available()
@@ -527,7 +544,7 @@ class AnalystAgent:
             yield {"type": "error", "error": str(exc)}
             return
 
-        system = _TOOLS_DOC + "\n\n" + self._context()
+        system = _TOOLS_DOC + "\n\n" + self._context(section)
         msgs: list[dict] = [{"role": m["role"], "content": m["content"]} for m in history]
         msgs.append({"role": "user", "content": message})
         self._message = message
@@ -697,9 +714,11 @@ class AnalystAgent:
         finally:
             self._close()
 
-    def handle(self, message: str, history: list[dict] | None = None) -> AgentTurn:
+    def handle(
+        self, message: str, history: list[dict] | None = None, section: str | None = None
+    ) -> AgentTurn:
         turn = AgentTurn()
-        for ev in self.run(message, history):
+        for ev in self.run(message, history, section):
             turn.events.append(ev)
             if ev["type"] == "error":
                 turn.error = ev["error"]

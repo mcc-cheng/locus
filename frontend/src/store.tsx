@@ -1,7 +1,7 @@
 import { createContext, useContext, useState, type ReactNode } from "react";
 import type { ChartRequest } from "./api/types";
 
-export type Tab = "home" | "upload" | "data" | "visualize" | "sandbox";
+export type Tab = "home" | "upload" | "data" | "visualize" | "saved";
 
 interface AppState {
   tab: Tab;
@@ -21,6 +21,15 @@ interface AppState {
   /** Bumped whenever data changes (e.g. after an upload) so tabs refetch. */
   schemaVersion: number;
   refreshSchema: () => void;
+  /** Bumped whenever the saved-chats list changes, so the sidebar refetches. */
+  chatsVersion: number;
+  refreshChats: () => void;
+  /** Chat session the ChatPanel should show; null = a fresh chat. */
+  openChatId: string | null;
+  /** Bumped on every open/new request so the panel reacts even if id repeats. */
+  chatNonce: number;
+  openChat: (id: string) => void;
+  newChat: () => void;
 }
 
 const Ctx = createContext<AppState | null>(null);
@@ -39,6 +48,9 @@ export function AppProvider({ children }: { children: ReactNode }) {
   );
   const [vizHandoff, setVizHandoff] = useState<ChartRequest | null>(null);
   const [schemaVersion, setSchemaVersion] = useState(0);
+  const [chatsVersion, setChatsVersion] = useState(0);
+  const [openChatId, setOpenChatId] = useState<string | null>(null);
+  const [chatNonce, setChatNonce] = useState(0);
 
   const setPanelCollapsed = (b: boolean) => {
     setPanelCollapsedState(b);
@@ -67,6 +79,18 @@ export function AppProvider({ children }: { children: ReactNode }) {
   };
 
   const refreshSchema = () => setSchemaVersion((v) => v + 1);
+  const refreshChats = () => setChatsVersion((v) => v + 1);
+
+  const openChat = (id: string) => {
+    setOpenChatId(id);
+    setChatNonce((n) => n + 1);
+    setPanelCollapsed(false);
+  };
+  const newChat = () => {
+    setOpenChatId(null);
+    setChatNonce((n) => n + 1);
+    setPanelCollapsed(false);
+  };
 
   const value: AppState = {
     tab,
@@ -83,6 +107,12 @@ export function AppProvider({ children }: { children: ReactNode }) {
     consumeVizHandoff,
     schemaVersion,
     refreshSchema,
+    chatsVersion,
+    refreshChats,
+    openChatId,
+    chatNonce,
+    openChat,
+    newChat,
   };
   return <Ctx.Provider value={value}>{children}</Ctx.Provider>;
 }

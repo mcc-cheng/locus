@@ -44,6 +44,7 @@ from services import (
     ServiceError,
     VisualizationService,
 )
+from services import library
 from warehouse import CanonicalDB, SectionNotFoundError, Warehouse
 from warehouse import rows as row_ops
 
@@ -60,6 +61,8 @@ class QueryBody(BaseModel):
 class AgentChatBody(BaseModel):
     message: str
     history: list[dict] = []  # full conversation passed each request; no server session
+    # The dataset the user is working in; scopes the agent to that one dataset.
+    section: str | None = None
     # Present only when the user clicked "Confirm" on a proposed data change. The
     # exact action the agent previewed is round-tripped back and executed
     # deterministically here — the LLM is never re-run to perform the change.
@@ -73,6 +76,21 @@ class RowAppendBody(BaseModel):
 class CellPatchBody(BaseModel):
     column: str
     value: str | None = None
+
+
+class SaveChartBody(BaseModel):
+    id: str | None = None
+    title: str | None = None
+    section: str | None = None
+    spec: dict
+    chart_request: dict | None = None
+
+
+class SaveChatBody(BaseModel):
+    id: str
+    title: str | None = None
+    section: str | None = None
+    messages: list[dict] = []
 
 
 class SandboxRunBody(BaseModel):
@@ -394,10 +412,59 @@ def create_app(root: str | Path, *, brain_factory=None) -> FastAPI:
                 agent = AnalystAgent(
                     state.root, state.brain_factory(), sandbox_manager=state.sandboxes
                 )
-                for event in agent.run(body.message, body.history):
+                for event in agent.run(body.message, body.history, body.section):
                     yield _line(event)
 
         return StreamingResponse(stream(), media_type="application/x-ndjson")
+
+    # ---- library: saved charts ------------------------------------------
+    @app.get("/library/charts")
+    def list_charts():
+        with state.lock:
+            return ok(library.list_charts(state.root))
+
+    @app.post("/library/charts")
+    def save_chart(body: SaveChartBody):
+        with state.lock:
+            try:
+                return ok(library.save_chart(state.root, body.model_dump()), status_code=201)
+            except ValueError as exc:
+                return err(str(exc), status_code=400)
+
+    @app.delete("/library/charts/{chart_id}")
+    def delete_chart(chart_id: str):
+        with state.lock:
+            if not library.delete_chart(state.root, chart_id):
+                return err(f"no chart {chart_id!r}", status_code=404)
+            return ok({"deleted": chart_id})
+
+    # ---- library: saved chats -------------------------------------------
+    @app.get("/library/chats")
+    def list_chats():
+        with state.lock:
+            return ok(library.list_chats(state.root))
+
+    @app.get("/library/chats/{chat_id}")
+    def get_chat(chat_id: str):
+        with state.lock:
+            chat = library.get_chat(state.root, chat_id)
+            if chat is None:
+                return err(f"no chat {chat_id!r}", status_code=404)
+            return ok(chat)
+
+    @app.put("/library/chats/{chat_id}")
+    def save_chat(chat_id: str, body: SaveChatBody):
+        with state.lock:
+            payload = body.model_dump()
+            payload["id"] = chat_id
+            return ok(library.save_chat(state.root, payload))
+
+    @app.delete("/library/chats/{chat_id}")
+    def delete_chat(chat_id: str):
+        with state.lock:
+            if not library.delete_chat(state.root, chat_id):
+                return err(f"no chat {chat_id!r}", status_code=404)
+            return ok({"deleted": chat_id})
 
     @app.delete("/sandboxes/{sandbox_id}")
     def delete_sandbox(sandbox_id: str):

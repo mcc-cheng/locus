@@ -219,6 +219,35 @@ def test_check_data_reports_issues(tmp_path):
     assert "1 missing" in check["summary"]
 
 
+# ---- dataset scoping --------------------------------------------------------
+
+
+def test_context_scopes_to_one_dataset(tmp_path):
+    # With two datasets, passing a section focuses the context on just that one.
+    from datetime import datetime, timezone
+    from ingest import DeterministicIngestor
+    from warehouse import Warehouse
+
+    root = tmp_path / "wh"
+    wh = Warehouse.open(root)
+    a = tmp_path / "alpha.csv"
+    a.write_text("id,x\n1,10\n2,20\n", encoding="utf-8")
+    b = tmp_path / "beta.csv"
+    b.write_text("id,y\n1,foo\n2,bar\n", encoding="utf-8")
+    ing = DeterministicIngestor(wh)
+    sec_a = ing.ingest(a, datetime(2026, 6, 16, tzinfo=timezone.utc)).section
+    sec_b = ing.ingest(b, datetime(2026, 6, 16, 1, tzinfo=timezone.utc)).section
+    wh.close()
+
+    agent = _agent(root)
+    both = agent._context()
+    assert sec_a in both and sec_b in both  # unscoped: sees all
+    scoped = agent._context(sec_a)
+    assert sec_a in scoped and sec_b not in scoped  # scoped: only the active one
+    assert "ONE dataset" in scoped
+    agent._close()
+
+
 # ---- data mutations (propose -> confirm; never auto-applied) ----------------
 
 

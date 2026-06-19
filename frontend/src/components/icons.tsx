@@ -11,6 +11,17 @@ const base = (className = "h-5 w-5") => ({
   strokeLinejoin: "round" as const,
 });
 
+export const BookmarkIcon = ({ className }: P) => (
+  <svg {...base(className)}>
+    <path d="M6 4h12v16l-6-4-6 4V4z" />
+  </svg>
+);
+export const PlusCircleIcon = ({ className }: P) => (
+  <svg {...base(className)}>
+    <circle cx="12" cy="12" r="9" />
+    <path d="M12 8v8M8 12h8" />
+  </svg>
+);
 export const HomeIcon = ({ className }: P) => (
   <svg {...base(className)}>
     <path d="M3 10.5 12 3l9 7.5" />

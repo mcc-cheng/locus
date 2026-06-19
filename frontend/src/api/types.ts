@@ -159,3 +159,29 @@ export interface ChatTurn {
   role: "user" | "assistant";
   content: string;
 }
+
+// ---- library (saved charts + chats) ----
+export interface SavedChart {
+  id: string;
+  title: string;
+  section: string | null;
+  spec: Record<string, unknown>;
+  chart_request: ChartRequest | null;
+  created: string;
+}
+
+export interface ChatSummary {
+  id: string;
+  title: string;
+  section: string | null;
+  updated: string;
+}
+
+export interface SavedChat {
+  id: string;
+  title: string;
+  section: string | null;
+  messages: unknown[];
+  created: string;
+  updated: string;
+}

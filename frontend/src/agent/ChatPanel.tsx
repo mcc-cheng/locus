@@ -1,10 +1,10 @@
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { api } from "../api/client";
-import type { AgentEvent, ChartRequest, ChatTurn, MutationAction } from "../api/types";
+import type { AgentEvent, ChartRequest, ChatTurn, DatasetSummary, MutationAction } from "../api/types";
 import { useApp } from "../store";
 import { VegaChart } from "../components/VegaChart";
 import { Markdown } from "../components/Markdown";
-import { ChevronRight, SendIcon, SparkleIcon } from "../components/icons";
+import { ChevronRight, DataIcon, SendIcon, SparkleIcon } from "../components/icons";
 
 interface Step {
   tool: string;
@@ -52,6 +52,12 @@ const SUGGESTIONS = [
   "Are the groups significantly different?",
 ];
 
+// Friendly dataset name: the uploaded filename without its extension.
+function datasetLabel(d: DatasetSummary | null): string {
+  if (!d) return "—";
+  return d.source_filename.replace(/\.[^.]+$/, "") || d.name;
+}
+
 const TOOL_LABEL: Record<string, string> = {
   run_sql: "Queried the data",
   make_chart: "Built a chart",
@@ -61,11 +67,106 @@ const TOOL_LABEL: Record<string, string> = {
 };
 
 export function ChatPanel({ onCollapse }: { onCollapse: () => void }) {
-  const { openInVisualize, refreshSchema } = useApp();
+  const {
+    openInVisualize,
+    refreshSchema,
+    selectedSection,
+    setSelectedSection,
+    schemaVersion,
+    openChatId,
+    chatNonce,
+    newChat,
+    refreshChats,
+  } = useApp();
   const [messages, setMessages] = useState<Msg[]>([]);
   const [input, setInput] = useState("");
   const [streaming, setStreaming] = useState(false);
+  const [datasets, setDatasets] = useState<DatasetSummary[]>([]);
+  const [activeSection, setActiveSection] = useState<string | null>(null);
+  const [pickerOpen, setPickerOpen] = useState(false);
   const scrollRef = useRef<HTMLDivElement>(null);
+  const sessionRef = useRef<string>(crypto.randomUUID()); // id of the current chat
+
+  // Load the chat the sidebar asked for (or reset to a fresh thread). Driven by
+  // chatNonce so clicking the same chat / "New" again still re-triggers.
+  useEffect(() => {
+    if (openChatId == null) {
+      sessionRef.current = crypto.randomUUID();
+      setMessages([]);
+      setInput("");
+      return;
+    }
+    let cancelled = false;
+    api
+      .getChat(openChatId)
+      .then((chat) => {
+        if (cancelled) return;
+        sessionRef.current = chat.id;
+        setMessages((chat.messages as Msg[]) ?? []);
+        if (chat.section) {
+          setActiveSection(chat.section);
+          setSelectedSection(chat.section);
+        }
+        setInput("");
+        scrollDown();
+      })
+      .catch(() => {});
+    return () => {
+      cancelled = true;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [chatNonce]);
+
+  // Persist the conversation after each turn settles (streaming turns off).
+  useEffect(() => {
+    if (streaming) return;
+    const firstUser = messages.find((m) => m.role === "user") as { text: string } | undefined;
+    if (!firstUser) return; // nothing meaningful to save yet
+    api
+      .saveChat({
+        id: sessionRef.current,
+        title: firstUser.text.slice(0, 80),
+        section: activeSection,
+        messages,
+      })
+      .then(() => refreshChats())
+      .catch(() => {});
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [streaming]);
+
+  // Keep the dataset list fresh; pick a sensible active dataset (the one the user
+  // has selected elsewhere, else the first) whenever the set of datasets changes.
+  useEffect(() => {
+    let cancelled = false;
+    api
+      .schema()
+      .then((s) => {
+        if (cancelled) return;
+        setDatasets(s.datasets);
+        setActiveSection((cur) => {
+          const names = s.datasets.map((d) => d.name);
+          if (cur && names.includes(cur)) return cur;
+          if (selectedSection && names.includes(selectedSection)) return selectedSection;
+          return s.datasets[0]?.name ?? null;
+        });
+      })
+      .catch(() => {});
+    return () => {
+      cancelled = true;
+    };
+  }, [schemaVersion, selectedSection]);
+
+  const activeDataset = datasets.find((d) => d.name === activeSection) ?? null;
+
+  // Switch which dataset the analyst works in. Starts a fresh conversation so the
+  // thread clearly belongs to one dataset, and syncs the app's selection.
+  function switchDataset(section: string) {
+    setPickerOpen(false);
+    if (section === activeSection) return;
+    setActiveSection(section);
+    setSelectedSection(section);
+    newChat(); // fresh thread for the new dataset (the load effect clears messages)
+  }
 
   function scrollDown() {
     requestAnimationFrame(() =>
@@ -125,7 +226,7 @@ export function ChatPanel({ onCollapse }: { onCollapse: () => void }) {
 
   async function send(text: string) {
     text = text.trim();
-    if (!text || streaming) return;
+    if (!text || streaming || !activeSection) return;
     const history: ChatTurn[] = messages
       .filter((m) => (m.role === "assistant" ? m.text : true))
       .map((m) => ({ role: m.role, content: m.role === "assistant" ? m.text : m.text }));
@@ -138,10 +239,15 @@ export function ChatPanel({ onCollapse }: { onCollapse: () => void }) {
     setStreaming(true);
     scrollDown();
     try {
-      await api.agentChat(text, history, (e) => {
-        pushEvent(e);
-        scrollDown();
-      });
+      await api.agentChat(
+        text,
+        history,
+        (e) => {
+          pushEvent(e);
+          scrollDown();
+        },
+        { section: activeSection },
+      );
     } catch (err) {
       pushEvent({ type: "error", error: String((err as Error).message) });
     } finally {
@@ -170,7 +276,7 @@ export function ChatPanel({ onCollapse }: { onCollapse: () => void }) {
           pushEvent(e);
           scrollDown();
         },
-        action,
+        { confirm: action, section: activeSection },
       );
     } catch (err) {
       pushEvent({ type: "error", error: String((err as Error).message) });
@@ -216,6 +322,53 @@ export function ChatPanel({ onCollapse }: { onCollapse: () => void }) {
           <ChevronRight />
         </button>
       </header>
+
+      {/* Active-dataset indicator + switcher */}
+      <div className="relative border-b border-slate-200 bg-slate-50/70 px-3 py-2">
+        {datasets.length === 0 ? (
+          <div className="px-1.5 py-1 text-[11px] text-slate-400">
+            No datasets yet — upload one to begin.
+          </div>
+        ) : (
+          <button
+            onClick={() => setPickerOpen((o) => !o)}
+            disabled={datasets.length <= 1}
+            className="flex w-full items-center gap-2 rounded-lg px-1.5 py-1 text-left transition enabled:hover:bg-slate-100 disabled:cursor-default"
+          >
+            <DataIcon className="h-4 w-4 shrink-0 text-indigo-500" />
+            <span className="shrink-0 text-[10px] font-medium uppercase tracking-wide text-slate-400">
+              Working in
+            </span>
+            <span className="flex-1 truncate text-sm font-semibold text-slate-800">
+              {datasetLabel(activeDataset)}
+            </span>
+            {datasets.length > 1 && (
+              <ChevronRight
+                className={`h-4 w-4 shrink-0 text-slate-400 transition ${pickerOpen ? "rotate-90" : ""}`}
+              />
+            )}
+          </button>
+        )}
+        {pickerOpen && datasets.length > 1 && (
+          <div className="absolute left-2 right-2 z-20 mt-1 max-h-64 overflow-auto rounded-xl border border-slate-200 bg-white p-1 shadow-lg">
+            {datasets.map((d) => (
+              <button
+                key={d.name}
+                onClick={() => switchDataset(d.name)}
+                className={`flex w-full items-center gap-2 rounded-lg px-2.5 py-2 text-left text-sm transition hover:bg-slate-50 ${
+                  d.name === activeSection ? "font-medium text-indigo-700" : "text-slate-700"
+                }`}
+              >
+                <span className="flex-1 truncate">{datasetLabel(d)}</span>
+                <span className="shrink-0 text-[11px] text-slate-400">
+                  {d.row_count.toLocaleString()} rows
+                </span>
+                {d.name === activeSection && <span className="shrink-0 text-indigo-600">✓</span>}
+              </button>
+            ))}
+          </div>
+        )}
+      </div>
 
       <div ref={scrollRef} className="flex-1 space-y-3 overflow-auto px-4 py-4">
         {messages.length === 0 && (
@@ -272,12 +425,15 @@ export function ChatPanel({ onCollapse }: { onCollapse: () => void }) {
               }
             }}
             rows={1}
-            placeholder="Ask about your data…"
-            className="max-h-32 flex-1 resize-none bg-transparent px-2 py-1.5 text-sm outline-none"
+            disabled={!activeSection}
+            placeholder={
+              activeSection ? `Ask about ${datasetLabel(activeDataset)}…` : "Upload a dataset to begin…"
+            }
+            className="max-h-32 flex-1 resize-none bg-transparent px-2 py-1.5 text-sm outline-none disabled:cursor-not-allowed"
           />
           <button
             onClick={() => send(input)}
-            disabled={streaming || !input.trim()}
+            disabled={streaming || !input.trim() || !activeSection}
             className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-indigo-600 text-white transition hover:bg-indigo-500 disabled:opacity-40"
           >
             <SendIcon className="h-4 w-4" />
@@ -427,16 +583,52 @@ function AssistantBubble({
           <div className="rounded-lg border border-slate-100 bg-slate-50 p-2">
             <VegaChart spec={c.spec} />
           </div>
-          {c.chartRequest && (
-            <button
-              onClick={() => onOpenChart(c.chartRequest!)}
-              className="mt-1.5 text-[11px] font-medium text-indigo-600 hover:underline"
-            >
-              Open in Visualize →
-            </button>
-          )}
+          <ChartActions chart={c} onOpenChart={onOpenChart} />
         </div>
       ))}
+    </div>
+  );
+}
+
+// Save / open actions under an analyst-made chart.
+function ChartActions({
+  chart,
+  onOpenChart,
+}: {
+  chart: Chart;
+  onOpenChart: (r: ChartRequest) => void;
+}) {
+  const [saved, setSaved] = useState(false);
+  async function save() {
+    try {
+      await api.saveChart({
+        title: "Analyst chart",
+        section: chart.chartRequest?.section ?? null,
+        spec: chart.spec,
+        chart_request: chart.chartRequest,
+      });
+      setSaved(true);
+    } catch {
+      /* ignore — non-critical */
+    }
+  }
+  return (
+    <div className="mt-1.5 flex items-center gap-3">
+      <button
+        onClick={save}
+        disabled={saved}
+        className="text-[11px] font-medium text-indigo-600 hover:underline disabled:text-emerald-600 disabled:no-underline"
+      >
+        {saved ? "Saved ✓" : "Save"}
+      </button>
+      {chart.chartRequest && (
+        <button
+          onClick={() => onOpenChart(chart.chartRequest!)}
+          className="text-[11px] font-medium text-indigo-600 hover:underline"
+        >
+          Open in Visualize →
+        </button>
+      )}
     </div>
   );
 }

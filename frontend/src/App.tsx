@@ -3,11 +3,11 @@ import { Home } from "./tabs/Home";
 import { Upload } from "./tabs/Upload";
 import { DataTab } from "./tabs/DataTab";
 import { Visualize } from "./tabs/Visualize";
-import { Sandbox } from "./tabs/Sandbox";
+import { Saved } from "./tabs/Saved";
 import { ChatPanel } from "./agent/ChatPanel";
 import type { ComponentType } from "react";
 import {
-  BeakerIcon,
+  BookmarkIcon,
   ChartIcon,
   ChatIcon,
   ChevronLeft,
@@ -18,13 +18,14 @@ import {
 } from "./components/icons";
 import { StatusBar } from "./components/StatusBar";
 import { LocusLogo } from "./components/LocusLogo";
+import { ChatHistory } from "./agent/ChatHistory";
 
 const TABS: { id: Tab; label: string; Icon: ComponentType<{ className?: string }> }[] = [
   { id: "home", label: "Home", Icon: HomeIcon },
   { id: "upload", label: "Upload", Icon: UploadIcon },
   { id: "data", label: "Data", Icon: DataIcon },
   { id: "visualize", label: "Visualize", Icon: ChartIcon },
-  { id: "sandbox", label: "Sandbox", Icon: BeakerIcon },
+  { id: "saved", label: "Saved", Icon: BookmarkIcon },
 ];
 
 export function App() {
@@ -67,7 +68,7 @@ export function App() {
           </button>
         )}
 
-        <ul className={`flex-1 space-y-0.5 pt-2 ${navCollapsed ? "px-2" : "px-3"}`}>
+        <ul className={`space-y-0.5 pt-2 ${navCollapsed ? "px-2" : "px-3"}`}>
           {TABS.map(({ id, label, Icon }) => (
             <li key={id}>
               <button
@@ -90,6 +91,8 @@ export function App() {
             </li>
           ))}
         </ul>
+        {!navCollapsed && <ChatHistory />}
+        {navCollapsed && <div className="flex-1" />}
         {!navCollapsed && (
           <div className="flex items-center gap-2 px-5 py-4 text-[11px] text-slate-400">
             <span className="h-1.5 w-1.5 rounded-full bg-emerald-400" />
@@ -115,7 +118,7 @@ export function App() {
             )}
             {tab === "data" && <DataTab />}
             {tab === "visualize" && <Visualize />}
-            {tab === "sandbox" && <Sandbox />}
+            {tab === "saved" && <Saved />}
           </div>
         </div>
       </main>

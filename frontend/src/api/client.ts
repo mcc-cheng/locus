@@ -2,8 +2,11 @@ import type {
   AgentEvent,
   ChartRequest,
   ChartSuggestion,
+  ChatSummary,
   ChatTurn,
   MutationAction,
+  SavedChart,
+  SavedChat,
   DepsHealth,
   Envelope,
   IngestResult,
@@ -115,6 +118,36 @@ export const api = {
     );
   },
 
+  // ---- library: saved charts & chats ----
+  listCharts: () => getJSON<SavedChart[]>("/library/charts"),
+  saveChart: (chart: {
+    title?: string;
+    section?: string | null;
+    spec: Record<string, unknown>;
+    chart_request?: ChartRequest | null;
+  }) => postJSON<SavedChart>("/library/charts", chart),
+  async deleteChart(id: string) {
+    return unwrap<{ deleted: string }>(
+      await fetch(`${API_BASE}/library/charts/${encodeURIComponent(id)}`, { method: "DELETE" }),
+    );
+  },
+  listChats: () => getJSON<ChatSummary[]>("/library/chats"),
+  getChat: (id: string) => getJSON<SavedChat>(`/library/chats/${encodeURIComponent(id)}`),
+  async saveChat(chat: { id: string; title?: string; section?: string | null; messages: unknown[] }) {
+    return unwrap<SavedChat>(
+      await fetch(`${API_BASE}/library/chats/${encodeURIComponent(chat.id)}`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(chat),
+      }),
+    );
+  },
+  async deleteChat(id: string) {
+    return unwrap<{ deleted: string }>(
+      await fetch(`${API_BASE}/library/chats/${encodeURIComponent(id)}`, { method: "DELETE" }),
+    );
+  },
+
   createSandbox: () => postJSON<{ sandbox_id: string }>("/sandboxes", {}),
   deleteSandbox: (id: string) =>
     fetch(`${API_BASE}/sandboxes/${encodeURIComponent(id)}`, { method: "DELETE" }).then(
@@ -137,12 +170,17 @@ export const api = {
     message: string,
     history: ChatTurn[],
     onEvent: (e: AgentEvent) => void,
-    confirm?: MutationAction,
+    opts?: { confirm?: MutationAction; section?: string | null },
   ): Promise<void> {
     const res = await fetch(`${API_BASE}/agent/chat`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ message, history, confirm: confirm ?? null }),
+      body: JSON.stringify({
+        message,
+        history,
+        confirm: opts?.confirm ?? null,
+        section: opts?.section ?? null,
+      }),
     });
     if (!res.body) throw new Error("no response stream");
     const reader = res.body.getReader();
