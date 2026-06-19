@@ -17,6 +17,7 @@ import {
   UploadIcon,
 } from "./components/icons";
 import { StatusBar } from "./components/StatusBar";
+import { LocusLogo } from "./components/LocusLogo";
 
 const TABS: { id: Tab; label: string; Icon: ComponentType<{ className?: string }> }[] = [
   { id: "home", label: "Home", Icon: HomeIcon },
@@ -38,9 +39,7 @@ export function App() {
         }`}
       >
         <div className={`flex items-center py-5 ${navCollapsed ? "justify-center px-0" : "gap-2.5 px-5"}`}>
-          <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-gradient-to-br from-indigo-500 to-violet-600 text-sm font-bold text-white shadow-sm">
-            L
-          </div>
+          <LocusLogo className="h-8 w-8 shrink-0 rounded-lg shadow-sm" />
           {!navCollapsed && (
             <>
               <div className="flex-1">

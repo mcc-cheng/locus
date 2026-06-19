@@ -10,6 +10,7 @@
         background: #f8fafc; color: #1e293b;
       }
       .box { width: 380px; text-align: center; padding: 24px; }
+      .logo { width: 56px; height: 56px; margin: 0 auto 14px; display: block; }
       h1 { font-size: 22px; margin: 0 0 6px; color: #4f46e5; }
       .spinner {
         width: 28px; height: 28px; margin: 16px auto;
@@ -30,6 +31,35 @@
   </head>
   <body>
     <div class="box">
+      <svg class="logo" viewBox="0 0 60 60" xmlns="http://www.w3.org/2000/svg">
+        <defs>
+          <linearGradient id="lg" x1="0" y1="0" x2="0" y2="1">
+            <stop offset="0%" stop-color="#c4b1ff"/>
+            <stop offset="100%" stop-color="#7c3aed"/>
+          </linearGradient>
+          <filter id="gl" x="-60%" y="-60%" width="220%" height="220%">
+            <feGaussianBlur stdDeviation="2.6"/>
+          </filter>
+        </defs>
+        <rect width="60" height="60" rx="14" fill="#0f0f1e"/>
+        <circle cx="12" cy="48" r="7.5" fill="#8b5cf6" opacity="0.5" filter="url(#gl)"/>
+        <circle cx="12" cy="12" r="4" fill="url(#lg)"/>
+        <circle cx="12" cy="24" r="4" fill="url(#lg)"/>
+        <circle cx="12" cy="36" r="4" fill="url(#lg)"/>
+        <circle cx="12" cy="48" r="5" fill="url(#lg)"/>
+        <circle cx="24" cy="48" r="4" fill="url(#lg)"/>
+        <circle cx="36" cy="48" r="4" fill="url(#lg)"/>
+        <circle cx="48" cy="48" r="4" fill="url(#lg)"/>
+        <circle cx="24" cy="12" r="4" fill="#363651"/>
+        <circle cx="36" cy="12" r="4" fill="#363651"/>
+        <circle cx="48" cy="12" r="4" fill="#363651"/>
+        <circle cx="24" cy="24" r="4" fill="#363651"/>
+        <circle cx="36" cy="24" r="4" fill="#363651"/>
+        <circle cx="48" cy="24" r="4" fill="#363651"/>
+        <circle cx="24" cy="36" r="4" fill="#363651"/>
+        <circle cx="36" cy="36" r="4" fill="#363651"/>
+        <circle cx="48" cy="36" r="4" fill="#363651"/>
+      </svg>
       <h1>Locus</h1>
       <div id="status">Starting the Locus engine…</div>
       <div class="spinner" id="spinner"></div>
