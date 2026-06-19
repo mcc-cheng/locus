@@ -4,6 +4,7 @@ import type { AgentEvent, ChartRequest, ChatTurn, DatasetSummary, MutationAction
 import { useApp } from "../store";
 import { VegaChart } from "../components/VegaChart";
 import { Markdown } from "../components/Markdown";
+import { SaveToLibraryDialog } from "../components/SaveToLibraryDialog";
 import { ChevronRight, DataIcon, SendIcon, SparkleIcon } from "../components/icons";
 
 interface Step {
@@ -568,11 +569,9 @@ function AssistantBubble({
             alt={f.caption || "figure"}
             className="w-full rounded-lg border border-slate-200"
           />
-          <figcaption className="mt-1 flex items-center justify-between text-[11px] text-slate-500">
-            <span>{f.caption}</span>
-            <a href={f.image} download={`figure-${i + 1}.png`} className="font-medium text-indigo-600 hover:underline">
-              Download PNG
-            </a>
+          <figcaption className="mt-1 flex items-center justify-between gap-2 text-[11px] text-slate-500">
+            <span className="truncate">{f.caption}</span>
+            <FigureActions figure={f} index={i} />
           </figcaption>
         </figure>
       ))}
@@ -599,23 +598,11 @@ function ChartActions({
   onOpenChart: (r: ChartRequest) => void;
 }) {
   const [saved, setSaved] = useState(false);
-  async function save() {
-    try {
-      await api.saveChart({
-        title: "Analyst chart",
-        section: chart.chartRequest?.section ?? null,
-        spec: chart.spec,
-        chart_request: chart.chartRequest,
-      });
-      setSaved(true);
-    } catch {
-      /* ignore — non-critical */
-    }
-  }
+  const [open, setOpen] = useState(false);
   return (
     <div className="mt-1.5 flex items-center gap-3">
       <button
-        onClick={save}
+        onClick={() => setOpen(true)}
         disabled={saved}
         className="text-[11px] font-medium text-indigo-600 hover:underline disabled:text-emerald-600 disabled:no-underline"
       >
@@ -629,6 +616,51 @@ function ChartActions({
           Open in Visualize →
         </button>
       )}
+      {open && (
+        <SaveToLibraryDialog
+          draft={{
+            kind: "chart",
+            section: chart.chartRequest?.section ?? null,
+            spec: chart.spec,
+            chart_request: chart.chartRequest,
+          }}
+          defaultTitle="Analyst chart"
+          onClose={() => setOpen(false)}
+          onSaved={() => setSaved(true)}
+        />
+      )}
     </div>
+  );
+}
+
+// Save / download actions under an analyst-made figure (a PNG image).
+function FigureActions({ figure, index }: { figure: Figure; index: number }) {
+  const [saved, setSaved] = useState(false);
+  const [open, setOpen] = useState(false);
+  return (
+    <span className="flex shrink-0 items-center gap-3">
+      <button
+        onClick={() => setOpen(true)}
+        disabled={saved}
+        className="font-medium text-indigo-600 hover:underline disabled:text-emerald-600 disabled:no-underline"
+      >
+        {saved ? "Saved ✓" : "Save"}
+      </button>
+      <a
+        href={figure.image}
+        download={`figure-${index + 1}.png`}
+        className="font-medium text-indigo-600 hover:underline"
+      >
+        Download PNG
+      </a>
+      {open && (
+        <SaveToLibraryDialog
+          draft={{ kind: "figure", image: figure.image, caption: figure.caption }}
+          defaultTitle={figure.caption || "Analyst figure"}
+          onClose={() => setOpen(false)}
+          onSaved={() => setSaved(true)}
+        />
+      )}
+    </span>
   );
 }

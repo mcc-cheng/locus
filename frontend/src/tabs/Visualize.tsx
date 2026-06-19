@@ -14,6 +14,7 @@ import { useApp } from "../store";
 import { VegaChart } from "../components/VegaChart";
 import { Badge, Button, Card, ErrorBox, Field, PageTitle, Select, Spinner } from "../components/ui";
 import { BookmarkIcon, DownloadIcon } from "../components/icons";
+import { SaveToLibraryDialog } from "../components/SaveToLibraryDialog";
 
 type Role = "x" | "y" | "color" | "row" | "col" | "value";
 
@@ -53,6 +54,7 @@ export function Visualize() {
   const [view, setView] = useState<Result | null>(null);
   const [lastReq, setLastReq] = useState<ChartRequest | null>(null);
   const [saved, setSaved] = useState(false);
+  const [saveOpen, setSaveOpen] = useState(false);
 
   useEffect(() => {
     api.schema().then((s) => setDatasets(s.datasets)).catch((e) => setError(String(e.message)));
@@ -119,21 +121,6 @@ export function Visualize() {
     for (const r of chart.roles) if (roles[r]) (req as unknown as Record<string, unknown>)[r] = roles[r];
     if (chartType === "bar") req.aggregate = aggregate;
     runRequest(req, "Custom chart");
-  }
-
-  async function saveToLibrary() {
-    if (!out) return;
-    try {
-      await api.saveChart({
-        title: activeTitle || "Chart",
-        section,
-        spec: out.spec,
-        chart_request: lastReq,
-      });
-      setSaved(true);
-    } catch (e) {
-      setError(String((e as Error).message ?? e));
-    }
   }
 
   async function save(format: "png" | "svg") {
@@ -320,7 +307,12 @@ export function Visualize() {
               <span className="tabular">{out.execution_ms.toFixed(0)} ms</span>
             </div>
             <div className="flex items-center gap-2">
-              <Button variant="secondary" size="sm" onClick={saveToLibrary} disabled={saved}>
+              <Button
+                variant="secondary"
+                size="sm"
+                onClick={() => setSaveOpen(true)}
+                disabled={saved}
+              >
                 <BookmarkIcon className="h-4 w-4" /> {saved ? "Saved" : "Save"}
               </Button>
               <Button variant="secondary" size="sm" onClick={() => save("png")}>
@@ -346,6 +338,15 @@ export function Visualize() {
             </pre>
           )}
         </Card>
+      )}
+
+      {saveOpen && out && (
+        <SaveToLibraryDialog
+          draft={{ kind: "chart", section, spec: out.spec, chart_request: lastReq }}
+          defaultTitle={activeTitle || "Chart"}
+          onClose={() => setSaveOpen(false)}
+          onSaved={() => setSaved(true)}
+        />
       )}
     </div>
   );

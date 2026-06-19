@@ -160,13 +160,21 @@ export interface ChatTurn {
   content: string;
 }
 
-// ---- library (saved charts + chats) ----
-export interface SavedChart {
+// ---- library (saved items + folders + chats) ----
+export type SavedKind = "chart" | "figure";
+
+export interface SavedItem {
   id: string;
+  kind: SavedKind;
   title: string;
+  folder: string; // "" = root; "a/b" = nested
   section: string | null;
-  spec: Record<string, unknown>;
-  chart_request: ChartRequest | null;
+  // charts
+  spec?: Record<string, unknown> | null;
+  chart_request?: ChartRequest | null;
+  // figures
+  image?: string | null; // PNG data URI
+  caption?: string | null;
   created: string;
 }
 

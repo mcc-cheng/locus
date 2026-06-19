@@ -13,23 +13,55 @@ def _client(tmp_path):
 
 def test_save_list_delete_chart(tmp_path):
     c = _client(tmp_path)
-    assert c.get("/library/charts").json()["data"] == []
+    assert c.get("/library/items").json()["data"] == []
 
-    saved = c.post("/library/charts", json={"title": "My chart", "spec": SPEC}).json()["data"]
-    assert saved["id"] and saved["title"] == "My chart"
+    saved = c.post("/library/items", json={"kind": "chart", "title": "My chart", "spec": SPEC}).json()["data"]
+    assert saved["id"] and saved["title"] == "My chart" and saved["kind"] == "chart"
 
-    charts = c.get("/library/charts").json()["data"]
-    assert len(charts) == 1 and charts[0]["spec"] == SPEC
+    items = c.get("/library/items").json()["data"]
+    assert len(items) == 1 and items[0]["spec"] == SPEC
 
-    assert c.delete(f"/library/charts/{saved['id']}").status_code == 200
-    assert c.get("/library/charts").json()["data"] == []
-    assert c.delete(f"/library/charts/{saved['id']}").status_code == 404
+    assert c.delete(f"/library/items/{saved['id']}").status_code == 200
+    assert c.get("/library/items").json()["data"] == []
+    assert c.delete(f"/library/items/{saved['id']}").status_code == 404
 
 
-def test_chart_requires_spec(tmp_path):
+def test_save_figure(tmp_path):
     c = _client(tmp_path)
-    # empty spec dict -> rejected
-    assert c.post("/library/charts", json={"title": "x", "spec": {}}).status_code == 400
+    img = "data:image/png;base64,iVBORw0KGgo="
+    saved = c.post("/library/items", json={"kind": "figure", "title": "Fig 1", "image": img}).json()["data"]
+    assert saved["kind"] == "figure" and saved["image"] == img
+
+
+def test_item_requires_payload(tmp_path):
+    c = _client(tmp_path)
+    assert c.post("/library/items", json={"kind": "chart", "spec": {}}).status_code == 400
+    assert c.post("/library/items", json={"kind": "figure"}).status_code == 400
+
+
+def test_folders_and_move(tmp_path):
+    c = _client(tmp_path)
+    # saving into a nested folder registers the folder + ancestors
+    it = c.post(
+        "/library/items",
+        json={"kind": "chart", "title": "T", "spec": SPEC, "folder": "Reports/Figures"},
+    ).json()["data"]
+    assert it["folder"] == "Reports/Figures"
+    folders = c.get("/library/folders").json()["data"]
+    assert "Reports" in folders and "Reports/Figures" in folders
+
+    # explicit empty folder
+    c.post("/library/folders", json={"path": "Scratch"})
+    assert "Scratch" in c.get("/library/folders").json()["data"]
+
+    # move the item to the root
+    moved = c.patch(f"/library/items/{it['id']}", json={"folder": ""}).json()["data"]
+    assert moved["folder"] == ""
+
+    # deleting a folder reparents its items (none here) and removes the subtree
+    assert c.delete("/library/folders", params={"path": "Reports"}).status_code == 200
+    folders = c.get("/library/folders").json()["data"]
+    assert "Reports" not in folders and "Reports/Figures" not in folders
 
 
 def test_chat_upsert_and_summary_hides_messages(tmp_path):

@@ -78,12 +78,24 @@ class CellPatchBody(BaseModel):
     value: str | None = None
 
 
-class SaveChartBody(BaseModel):
+class SaveItemBody(BaseModel):
     id: str | None = None
+    kind: Literal["chart", "figure"] = "chart"
     title: str | None = None
+    folder: str | None = None
     section: str | None = None
-    spec: dict
-    chart_request: dict | None = None
+    spec: dict | None = None  # charts
+    chart_request: dict | None = None  # charts
+    image: str | None = None  # figures (data URI)
+    caption: str | None = None  # figures
+
+
+class MoveItemBody(BaseModel):
+    folder: str | None = None
+
+
+class FolderBody(BaseModel):
+    path: str
 
 
 class SaveChatBody(BaseModel):
@@ -417,26 +429,55 @@ def create_app(root: str | Path, *, brain_factory=None) -> FastAPI:
 
         return StreamingResponse(stream(), media_type="application/x-ndjson")
 
-    # ---- library: saved charts ------------------------------------------
-    @app.get("/library/charts")
-    def list_charts():
+    # ---- library: saved items (charts + figures) ------------------------
+    @app.get("/library/items")
+    def list_items():
         with state.lock:
-            return ok(library.list_charts(state.root))
+            return ok(library.list_items(state.root))
 
-    @app.post("/library/charts")
-    def save_chart(body: SaveChartBody):
+    @app.post("/library/items")
+    def save_item(body: SaveItemBody):
         with state.lock:
             try:
-                return ok(library.save_chart(state.root, body.model_dump()), status_code=201)
+                return ok(library.save_item(state.root, body.model_dump()), status_code=201)
             except ValueError as exc:
                 return err(str(exc), status_code=400)
 
-    @app.delete("/library/charts/{chart_id}")
-    def delete_chart(chart_id: str):
+    @app.patch("/library/items/{item_id}")
+    def move_item(item_id: str, body: MoveItemBody):
         with state.lock:
-            if not library.delete_chart(state.root, chart_id):
-                return err(f"no chart {chart_id!r}", status_code=404)
-            return ok({"deleted": chart_id})
+            moved = library.move_item(state.root, item_id, body.folder)
+            if moved is None:
+                return err(f"no item {item_id!r}", status_code=404)
+            return ok(moved)
+
+    @app.delete("/library/items/{item_id}")
+    def delete_item(item_id: str):
+        with state.lock:
+            if not library.delete_item(state.root, item_id):
+                return err(f"no item {item_id!r}", status_code=404)
+            return ok({"deleted": item_id})
+
+    # ---- library: folders (a virtual tree) ------------------------------
+    @app.get("/library/folders")
+    def list_folders():
+        with state.lock:
+            return ok(library.list_folders(state.root))
+
+    @app.post("/library/folders")
+    def create_folder(body: FolderBody):
+        with state.lock:
+            try:
+                return ok(library.create_folder(state.root, body.path), status_code=201)
+            except ValueError as exc:
+                return err(str(exc), status_code=400)
+
+    @app.delete("/library/folders")
+    def delete_folder(path: str):
+        with state.lock:
+            if not library.delete_folder(state.root, path):
+                return err(f"no folder {path!r}", status_code=404)
+            return ok({"deleted": path})
 
     # ---- library: saved chats -------------------------------------------
     @app.get("/library/chats")

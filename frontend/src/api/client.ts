@@ -5,8 +5,8 @@ import type {
   ChatSummary,
   ChatTurn,
   MutationAction,
-  SavedChart,
   SavedChat,
+  SavedItem,
   DepsHealth,
   Envelope,
   IngestResult,
@@ -118,17 +118,41 @@ export const api = {
     );
   },
 
-  // ---- library: saved charts & chats ----
-  listCharts: () => getJSON<SavedChart[]>("/library/charts"),
-  saveChart: (chart: {
+  // ---- library: saved items (charts + figures) ----
+  listItems: () => getJSON<SavedItem[]>("/library/items"),
+  saveItem: (item: {
+    kind: "chart" | "figure";
     title?: string;
+    folder?: string;
     section?: string | null;
-    spec: Record<string, unknown>;
+    spec?: Record<string, unknown> | null;
     chart_request?: ChartRequest | null;
-  }) => postJSON<SavedChart>("/library/charts", chart),
-  async deleteChart(id: string) {
+    image?: string | null;
+    caption?: string | null;
+  }) => postJSON<SavedItem>("/library/items", item),
+  async moveItem(id: string, folder: string) {
+    return unwrap<SavedItem>(
+      await fetch(`${API_BASE}/library/items/${encodeURIComponent(id)}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ folder }),
+      }),
+    );
+  },
+  async deleteItem(id: string) {
     return unwrap<{ deleted: string }>(
-      await fetch(`${API_BASE}/library/charts/${encodeURIComponent(id)}`, { method: "DELETE" }),
+      await fetch(`${API_BASE}/library/items/${encodeURIComponent(id)}`, { method: "DELETE" }),
+    );
+  },
+
+  // ---- library: folders (virtual tree) ----
+  listFolders: () => getJSON<string[]>("/library/folders"),
+  createFolder: (path: string) => postJSON<string[]>("/library/folders", { path }),
+  async deleteFolder(path: string) {
+    return unwrap<{ deleted: string }>(
+      await fetch(`${API_BASE}/library/folders?path=${encodeURIComponent(path)}`, {
+        method: "DELETE",
+      }),
     );
   },
   listChats: () => getJSON<ChatSummary[]>("/library/chats"),
