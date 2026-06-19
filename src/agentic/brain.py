@@ -27,15 +27,10 @@ def _normalize(name: str) -> str:
 
 
 # When LOCUS_AGENT_MODEL is unset, auto-pick the best installed model in this
-# order (smartest first). Qwen3 reasons better; 30b-a3b is a fast MoE.
+# order (smartest first). gemma4 reasons well and is fast; Qwen3 30b-a3b is a
+# strong MoE fallback.
 _PREFERRED = [
-    "qwen3:32b",
-    "qwen3:30b-a3b",
-    "qwen3:14b",
-    "qwen3:8b",
-    "qwen2.5:32b-instruct",
-    "qwen2.5:14b-instruct",
-    "qwen2.5:7b-instruct",
+    "gemma4",
 ]
 _resolved_model: str | None = None
 
@@ -173,19 +168,37 @@ class OllamaBrain:
             raise OllamaUnavailableError(_SERVER_DOWN.format(model=self.model))
         raise AgentError(f"model did not return a valid step after retries: {last_parse}")
 
-    def stream_answer(self, system: str, messages: list[dict]) -> Iterator[str]:
-        self.ensure_available()
-        convo = [{"role": "system", "content": system}, *messages]
-        for chunk in self._client.chat(
+    def _answer_stream(self, convo: list[dict], think):
+        return self._client.chat(
             model=self.model,
             messages=convo,
             stream=True,
             keep_alive=self.keep_alive,
             # When thinking is enabled, Ollama keeps reasoning in a separate
             # `thinking` field — we only stream `content`, so the answer stays clean.
-            think=self.answer_think,
+            think=think,
             options={"temperature": self.temperature},
-        ):
+        )
+
+    def stream_answer(self, system: str, messages: list[dict]) -> Iterator[str]:
+        self.ensure_available()
+        convo = [{"role": "system", "content": system}, *messages]
+        # Not every model supports the `think` flag (e.g. Gemma). Try with our
+        # setting; if the model rejects thinking, remember that and retry without
+        # it — so any non-reasoning model works without configuration.
+        try:
+            stream = self._answer_stream(convo, self.answer_think)
+            first = next(stream, None)
+        except ollama.ResponseError as exc:
+            if not self.answer_think or "does not support thinking" not in str(exc).lower():
+                raise
+            self.answer_think = False
+            stream = self._answer_stream(convo, False)
+            first = next(stream, None)
+
+        import itertools
+
+        for chunk in itertools.chain([] if first is None else [first], stream):
             piece = chunk.message.content
             if piece:
                 yield piece

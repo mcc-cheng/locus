@@ -6,6 +6,9 @@ cd "$(dirname "$0")"
 
 PORT=8000
 DATA="${LOCUS_DATA:-./data}"
+# Which local Ollama model the analyst uses (override: LOCUS_AGENT_MODEL=… ./dev.sh).
+export LOCUS_AGENT_MODEL="${LOCUS_AGENT_MODEL:-gemma4}"
+echo "▶ analyst model: $LOCUS_AGENT_MODEL"
 
 # Free the port if a previous run is lingering.
 lsof -ti tcp:$PORT 2>/dev/null | xargs kill 2>/dev/null || true
