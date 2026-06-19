@@ -105,6 +105,10 @@ class SaveChatBody(BaseModel):
     messages: list[dict] = []
 
 
+class RenameChatBody(BaseModel):
+    title: str
+
+
 class SandboxRunBody(BaseModel):
     kind: Literal["script", "notebook"] = "script"
     code: str | None = None  # for kind="script"
@@ -499,6 +503,14 @@ def create_app(root: str | Path, *, brain_factory=None) -> FastAPI:
             payload = body.model_dump()
             payload["id"] = chat_id
             return ok(library.save_chat(state.root, payload))
+
+    @app.patch("/library/chats/{chat_id}")
+    def rename_chat(chat_id: str, body: RenameChatBody):
+        with state.lock:
+            renamed = library.rename_chat(state.root, chat_id, body.title)
+            if renamed is None:
+                return err(f"no chat {chat_id!r}", status_code=404)
+            return ok(renamed)
 
     @app.delete("/library/chats/{chat_id}")
     def delete_chat(chat_id: str):

@@ -250,6 +250,23 @@ def save_chat(root: str | Path, chat: dict) -> dict:
     return record
 
 
+def rename_chat(root: str | Path, chat_id: str, title: str) -> dict | None:
+    """Update only a chat's title, preserving its messages (a safe rename that
+    never risks wiping the conversation the way a full upsert could)."""
+    path = _path(root, "chats.json")
+    items = _load(path)
+    found = None
+    for c in items:
+        if c.get("id") == chat_id:
+            c["title"] = (title or "New chat").strip()[:80]
+            c["updated"] = _now()
+            found = c
+    if found is None:
+        return None
+    _save(path, items)
+    return _chat_summary(found)
+
+
 def delete_chat(root: str | Path, chat_id: str) -> bool:
     path = _path(root, "chats.json")
     items = _load(path)

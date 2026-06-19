@@ -83,5 +83,11 @@ def test_chat_upsert_and_summary_hides_messages(tmp_path):
     listed = c.get("/library/chats").json()["data"]
     assert len(listed) == 1 and listed[0]["title"] == "Renamed"
 
+    # rename updates the title but PRESERVES the messages (no accidental wipe)
+    c.patch("/library/chats/abc", json={"title": "Renamed via PATCH"})
+    assert c.get("/library/chats/abc").json()["data"]["messages"] == msgs
+    assert c.get("/library/chats").json()["data"][0]["title"] == "Renamed via PATCH"
+    assert c.patch("/library/chats/missing", json={"title": "x"}).status_code == 404
+
     assert c.delete("/library/chats/abc").status_code == 200
     assert c.get("/library/chats").json()["data"] == []

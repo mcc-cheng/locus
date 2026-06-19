@@ -166,6 +166,15 @@ export const api = {
       }),
     );
   },
+  async renameChat(id: string, title: string) {
+    return unwrap<ChatSummary>(
+      await fetch(`${API_BASE}/library/chats/${encodeURIComponent(id)}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ title }),
+      }),
+    );
+  },
   async deleteChat(id: string) {
     return unwrap<{ deleted: string }>(
       await fetch(`${API_BASE}/library/chats/${encodeURIComponent(id)}`, { method: "DELETE" }),
