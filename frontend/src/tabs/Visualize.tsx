@@ -24,12 +24,17 @@ const CHARTS: { id: ChartType; label: string; roles: Role[]; optional: Role[] }[
   { id: "heatmap", label: "Heatmap", roles: ["row", "col", "value"], optional: [] },
   { id: "dose_response", label: "Dose-Response", roles: ["x", "y", "color"], optional: ["color"] },
   { id: "scatter", label: "Scatter", roles: ["x", "y", "color"], optional: ["color"] },
+  { id: "box", label: "Box plot", roles: ["x", "y"], optional: [] },
+  { id: "line", label: "Line", roles: ["x", "y", "color"], optional: ["color"] },
+  { id: "grouped_bar", label: "Grouped bar", roles: ["x", "color", "y"], optional: ["y"] },
+  { id: "correlation_matrix", label: "Correlations", roles: [], optional: [] },
 ];
 const ROLE_LABEL: Record<Role, string> = {
   x: "X axis", y: "Y axis", color: "Color / series", row: "Row", col: "Column", value: "Value",
 };
 const CHART_GLYPH: Record<ChartType, string> = {
   histogram: "▤", bar: "▦", heatmap: "▩", dose_response: "↗", scatter: "⁛",
+  box: "❑", line: "📈", grouped_bar: "▥", correlation_matrix: "▦",
 };
 
 export function Visualize() {
@@ -211,6 +216,9 @@ export function Visualize() {
                       </span>
                     </div>
                     <div className="mt-1.5 text-sm font-medium text-slate-700">{s.title}</div>
+                    {s.rationale && (
+                      <div className="mt-1 text-xs leading-snug text-slate-500">{s.rationale}</div>
+                    )}
                   </button>
                 ))}
               </div>
@@ -262,7 +270,7 @@ export function Visualize() {
                   </Select>
                 </Field>
               ))}
-              {chartType === "bar" && (
+              {(chartType === "bar" || chartType === "grouped_bar") && (
                 <Field label="Aggregate">
                   <Select value={aggregate} onChange={(v) => setAggregate(v as Aggregate)}>
                     {(["count", "sum", "avg", "min", "max"] as Aggregate[]).map((a) => (

@@ -161,3 +161,77 @@ def test_missing_required_column_raises(assay_root):
             viz.visualize(
                 ChartRequest(type="scatter", section=section, table="raw", x="nope", y="response")
             )
+
+
+# ---- new chart builders -------------------------------------------------
+
+
+def test_box(assay_root):
+    root, section = assay_root
+    with VisualizationService.open(root) as viz:
+        out = viz.visualize(
+            ChartRequest(type="box", section=section, table="raw", x="compound", y="response")
+        )
+    assert "layer" in out.spec  # layered manual boxplot
+    # one summary row per group; whiskers bracket the IQR
+    byc = {d["category"]: d for d in out.data}
+    assert set(byc) == {"X", "Y"}
+    x = byc["X"]
+    assert x["lo"] == 5.0 and x["hi"] == 30.0
+    assert x["lo"] <= x["q1"] <= x["mid"] <= x["q3"] <= x["hi"]
+
+
+def test_line_with_series(assay_root):
+    root, section = assay_root
+    with VisualizationService.open(root) as viz:
+        out = viz.visualize(
+            ChartRequest(
+                type="line", section=section, table="raw", x="dose", y="response", color="compound"
+            )
+        )
+    assert out.spec["mark"]["type"] == "line"
+    # x is linear (not log like dose_response)
+    assert "scale" not in out.spec["encoding"]["x"]
+    pt = next(d for d in out.data if d["series"] == "X" and d["x"] == 10.0)
+    assert pt["y"] == 30.0
+
+
+def test_grouped_bar_count(assay_root):
+    root, section = assay_root
+    with VisualizationService.open(root) as viz:
+        out = viz.visualize(
+            ChartRequest(
+                type="grouped_bar", section=section, table="raw", x="compound", color="well_row"
+            )
+        )
+    assert out.spec["encoding"]["xOffset"]["field"] == "series"
+    # compound X appears in rows A and B
+    xcells = {d["series"]: d["value"] for d in out.data if d["category"] == "X"}
+    assert xcells == {"A": 3}  # all three X wells are in row A in the fixture
+
+
+def test_grouped_bar_requires_y_for_aggregate(assay_root):
+    root, section = assay_root
+    with VisualizationService.open(root) as viz:
+        with pytest.raises(VisualizationError):
+            viz.visualize(
+                ChartRequest(
+                    type="grouped_bar", section=section, table="raw",
+                    x="compound", color="well_row", aggregate="avg",  # no y
+                )
+            )
+
+
+def test_correlation_matrix(assay_root):
+    root, section = assay_root
+    with VisualizationService.open(root) as viz:
+        out = viz.visualize(
+            ChartRequest(type="correlation_matrix", section=section, table="raw")
+        )
+    assert out.spec["mark"] == "rect"
+    # dose & response are the numeric columns; diagonal self-corr == 1
+    diag = next(d for d in out.data if d["var1"] == "dose" and d["var2"] == "dose")
+    assert abs(diag["corr"] - 1.0) < 1e-9
+    # dose vs response is strongly positive in the fixture
+    off = next(d for d in out.data if d["var1"] == "dose" and d["var2"] == "response")
+    assert off["corr"] > 0.5

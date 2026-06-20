@@ -40,6 +40,13 @@ class CsvReadOptions(BaseModel):
             "quotechar": self.quotechar,
             "escapechar": self.escapechar,
             "encoding": self.encoding,
+            # Real-world CSVs (e.g. genomics exports) often contain stray quote
+            # marks that aren't RFC-4180 compliant. Strict mode rejects the whole
+            # file with an opaque parser error; non-strict reads them as written.
+            # Safe here: with all_varchar there is no type inference, the same
+            # options are used for landing AND the reconstruction checkpoint, and
+            # the original bytes are preserved verbatim with their own sha256.
+            "strict_mode": False,
         }
         if self.delimiter is not None:
             kwargs["delimiter"] = self.delimiter

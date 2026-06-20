@@ -82,6 +82,10 @@ class VisualizationService:
             "heatmap": self._heatmap,
             "dose_response": self._dose_response,
             "scatter": self._scatter,
+            "box": self._box,
+            "line": self._line,
+            "grouped_bar": self._grouped_bar,
+            "correlation_matrix": self._correlation_matrix,
         }[req.type]
         return builder(req)
 
@@ -189,6 +193,140 @@ class VisualizationService:
             seen.add(key)
             deduped.append(s)
         return deduped[:8]
+
+    # ---- agentic suggestions --------------------------------------------
+
+    # Per chart type: (required roles, roles that must be numeric).
+    _ROLE_RULES = {
+        "histogram": (("x",), ("x",)),
+        "bar": (("x",), ()),
+        "heatmap": (("row", "col", "value"), ("value",)),
+        "dose_response": (("x", "y"), ("x", "y")),
+        "scatter": (("x", "y"), ("x", "y")),
+        "box": (("x", "y"), ("y",)),
+        "line": (("x", "y"), ("x", "y")),
+        "grouped_bar": (("x", "color"), ()),
+        "correlation_matrix": ((), ()),
+    }
+    # Roles that must be a sane category (low cardinality, not an id column).
+    _CAT_ROLES = {
+        "bar": ("x",),
+        "box": ("x",),
+        "grouped_bar": ("x", "color"),
+        "heatmap": ("row", "col"),
+    }
+    _TYPE_LABEL = {
+        "histogram": "Histogram", "bar": "Bar", "heatmap": "Heatmap",
+        "dose_response": "Dose-response", "scatter": "Scatter", "box": "Box plot",
+        "line": "Line", "grouped_bar": "Grouped bar", "correlation_matrix": "Correlations",
+    }
+
+    def _model_profile(self, section: str, table: str) -> dict:
+        """A compact, model-friendly description of the table for the proposer."""
+        prof = self._profile(section, table)
+        cols = list(prof.keys())
+        n = prof[cols[0]]["n"] if cols else 0
+        columns = []
+        for c in cols:
+            res = self._qs.run(
+                f"SELECT DISTINCT {_q(c)} AS v FROM {_qt(section, table)} "
+                f"WHERE {_q(c)} IS NOT NULL LIMIT 5",
+                page_size=5,
+            )
+            columns.append(
+                {
+                    "name": c,
+                    "numeric": prof[c]["numeric"],
+                    "distinct": prof[c]["distinct"],
+                    "id_like": prof[c]["unique"],
+                    "samples": [r[0] for r in res.rows],
+                }
+            )
+        return {"table": table, "row_count": n, "columns": columns}
+
+    def generate_suggestions(self, section: str, table: str, proposer) -> list[ChartSuggestion]:
+        """Ask the proposer for charts and return only the ones that validate
+        against the real data. May raise OllamaUnavailableError / ProposalError —
+        the caller decides whether to fall back to :meth:`suggest`."""
+        profile = self._model_profile(section, table)
+        proposal_set = proposer.propose(profile)
+        return self._validate_proposals(section, table, proposal_set.charts)
+
+    def _validate_proposals(self, section: str, table: str, charts) -> list[ChartSuggestion]:
+        from .chart_proposer import PALETTE
+
+        prof = self._profile(section, table)
+        existing = set(prof.keys())
+        numerics = {c for c, p in prof.items() if p["numeric"] and not p["unique"]}
+
+        def cat_ok(col: str) -> bool:
+            p = prof.get(col)
+            return bool(p) and not p["unique"] and p["distinct"] <= 50
+
+        out: list[ChartSuggestion] = []
+        seen: set = set()
+        for ch in charts:
+            t = ch.type
+            if t not in PALETTE:
+                continue
+            roles = {
+                "x": ch.x, "y": ch.y, "color": ch.color,
+                "row": ch.row, "col": ch.col, "value": ch.value,
+            }
+            roles = {
+                k: (v.strip() if isinstance(v, str) else v) or None for k, v in roles.items()
+            }
+            agg = ch.aggregate if ch.aggregate in ("count", "sum", "avg", "min", "max") else "count"
+
+            required, numeric_roles = self._ROLE_RULES[t]
+            req_roles, numeric_req = set(required), set(numeric_roles)
+            if t in ("bar", "grouped_bar") and agg != "count":
+                req_roles.add("y")
+                numeric_req.add("y")
+            if t == "correlation_matrix" and len(numerics) < 2:
+                continue
+
+            ok = True
+            for r in req_roles:
+                col = roles.get(r)
+                if not col or col not in existing:
+                    ok = False
+                    break
+                if r in numeric_req and col not in numerics:
+                    ok = False
+                    break
+            if ok:
+                for r in self._CAT_ROLES.get(t, ()):
+                    col = roles.get(r)
+                    if col and not cat_ok(col):
+                        ok = False
+                        break
+            if not ok:
+                continue
+
+            present = {k: v for k, v in roles.items() if v}
+            try:
+                request = ChartRequest(
+                    type=t, section=section, table=table, aggregate=agg, **present
+                )
+            except Exception:
+                continue
+            key = (t, request.x, request.y, request.color, request.row, request.col, request.value)
+            if key in seen:
+                continue
+            seen.add(key)
+            title = (ch.title or self._TYPE_LABEL[t]).strip()
+            out.append(
+                ChartSuggestion(
+                    title=title,
+                    description=self._TYPE_LABEL[t],
+                    request=request,
+                    rationale=(ch.rationale.strip() or None) if ch.rationale else None,
+                )
+            )
+            if len(out) >= 6:
+                break
+        return out
 
     # ---- chart builders --------------------------------------------------
 
@@ -332,3 +470,149 @@ class VisualizationService:
             encoding["color"] = {"field": "color", "type": "nominal", "title": req.color}
         spec = {"mark": "point", "encoding": encoding}
         return self._result(spec, tuple(out_cols), rows, truncated, ms)
+
+    def _box(self, req: ChartRequest) -> VisualizationResult:
+        """Box plot of a numeric ``y`` grouped by a categorical ``x``.
+
+        The 5-number summary is computed server-side (one row per group) and
+        rendered as a layered rule (whiskers) + bar (IQR) + tick (median) — the
+        full per-row values never leave DuckDB.
+        """
+        cols = self._require_columns(req, {"x": req.x, "y": req.y})
+        x, y = _q(cols["x"]), _q(cols["y"])
+        src = _qt(req.section, req.table)
+        num = f"TRY_CAST({y} AS DOUBLE)"
+        sql = (
+            f"SELECT {x} AS category, "
+            f"min({num}) AS lo, quantile_cont({num}, 0.25) AS q1, "
+            f"median({num}) AS mid, quantile_cont({num}, 0.75) AS q3, "
+            f"max({num}) AS hi, count({num}) AS n "
+            f"FROM {src} WHERE {num} IS NOT NULL GROUP BY category "
+            f"ORDER BY category"
+        )
+        columns, rows, truncated, ms = self._run(sql)
+        base = {"x": {"field": "category", "type": "nominal", "title": cols["x"]}}
+        spec = {
+            "layer": [
+                {
+                    "mark": {"type": "rule"},
+                    "encoding": {
+                        **base,
+                        "y": {"field": "lo", "type": "quantitative", "title": cols["y"]},
+                        "y2": {"field": "hi"},
+                    },
+                },
+                {
+                    "mark": {"type": "bar", "size": 24},
+                    "encoding": {
+                        **base,
+                        "y": {"field": "q1", "type": "quantitative"},
+                        "y2": {"field": "q3"},
+                        "color": {"field": "category", "type": "nominal", "legend": None},
+                    },
+                },
+                {
+                    "mark": {"type": "tick", "size": 24, "color": "white"},
+                    "encoding": {**base, "y": {"field": "mid", "type": "quantitative"}},
+                },
+            ]
+        }
+        return self._result(spec, columns, rows, truncated, ms)
+
+    def _line(self, req: ChartRequest) -> VisualizationResult:
+        """Average ``y`` over an ordered numeric ``x``, optional multi-series."""
+        cols = self._require_columns(req, {"x": req.x, "y": req.y})
+        x, y = _q(cols["x"]), _q(cols["y"])
+        src = _qt(req.section, req.table)
+        xnum = f"TRY_CAST({x} AS DOUBLE)"
+        ynum = f"avg(TRY_CAST({y} AS DOUBLE))"
+        if req.color:
+            self._require_columns(req, {"color": req.color})
+            series = _q(req.color)
+            sql = (
+                f"SELECT {series} AS series, {xnum} AS x, {ynum} AS y FROM {src} "
+                f"WHERE {xnum} IS NOT NULL GROUP BY series, x ORDER BY series, x"
+            )
+            out_cols = ("series", "x", "y")
+        else:
+            sql = (
+                f"SELECT {xnum} AS x, {ynum} AS y FROM {src} "
+                f"WHERE {xnum} IS NOT NULL GROUP BY x ORDER BY x"
+            )
+            out_cols = ("x", "y")
+        columns, rows, truncated, ms = self._run(sql)
+        encoding = {
+            "x": {"field": "x", "type": "quantitative", "title": cols["x"]},
+            "y": {"field": "y", "type": "quantitative", "title": cols["y"]},
+        }
+        if req.color:
+            encoding["color"] = {"field": "series", "type": "nominal", "title": req.color}
+        spec = {"mark": {"type": "line", "point": True}, "encoding": encoding}
+        return self._result(spec, out_cols, rows, truncated, ms)
+
+    def _grouped_bar(self, req: ChartRequest) -> VisualizationResult:
+        """Count or aggregate broken down by two categoricals (x × color)."""
+        cols = self._require_columns(req, {"x": req.x, "color": req.color})
+        if req.aggregate != "count":
+            self._require_columns(req, {"y": req.y})
+        x, series = _q(cols["x"]), _q(cols["color"])
+        agg = self._agg_expr(req, req.y)
+        sql = (
+            f"SELECT {x} AS category, {series} AS series, {agg} AS value "
+            f"FROM {_qt(req.section, req.table)} GROUP BY category, series "
+            f"ORDER BY category, series"
+        )
+        columns, rows, truncated, ms = self._run(sql)
+        spec = {
+            "mark": "bar",
+            "encoding": {
+                "x": {"field": "category", "type": "nominal", "title": cols["x"]},
+                "xOffset": {"field": "series", "type": "nominal"},
+                "y": {"field": "value", "type": "quantitative"},
+                "color": {"field": "series", "type": "nominal", "title": req.color},
+            },
+        }
+        return self._result(spec, ("category", "series", "value"), rows, truncated, ms)
+
+    _CORR_MAX_COLS = 12
+
+    def _correlation_matrix(self, req: ChartRequest) -> VisualizationResult:
+        """Pairwise Pearson correlation among the table's numeric columns."""
+        prof = self._profile(req.section, req.table)
+        numerics = [c for c, p in prof.items() if p["numeric"] and not p["unique"]]
+        numerics = numerics[: self._CORR_MAX_COLS]
+        if len(numerics) < 2:
+            raise VisualizationError(
+                "correlation_matrix needs at least two numeric columns"
+            )
+        src = _qt(req.section, req.table)
+        pairs = []
+        for a in numerics:
+            for b in numerics:
+                ca, cb = _q(a), _q(b)
+                pairs.append(
+                    f"corr(TRY_CAST({ca} AS DOUBLE), TRY_CAST({cb} AS DOUBLE))"
+                )
+        select = ", ".join(f"{expr} AS c{i}" for i, expr in enumerate(pairs))
+        _, rows, _, ms = self._run(f"SELECT {select} FROM {src}")
+        flat = rows[0] if rows else [None] * len(pairs)
+        data_rows = []
+        k = 0
+        for a in numerics:
+            for b in numerics:
+                data_rows.append([a, b, flat[k]])
+                k += 1
+        spec = {
+            "mark": "rect",
+            "encoding": {
+                "x": {"field": "var1", "type": "nominal", "title": None, "sort": numerics},
+                "y": {"field": "var2", "type": "nominal", "title": None, "sort": numerics},
+                "color": {
+                    "field": "corr",
+                    "type": "quantitative",
+                    "title": "correlation",
+                    "scale": {"scheme": "blueorange", "domain": [-1, 1]},
+                },
+            },
+        }
+        return self._result(spec, ("var1", "var2", "corr"), data_rows, False, ms)

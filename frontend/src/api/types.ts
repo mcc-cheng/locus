@@ -54,7 +54,16 @@ export interface QueryResult {
   execution_ms: number;
 }
 
-export type ChartType = "histogram" | "bar" | "heatmap" | "dose_response" | "scatter";
+export type ChartType =
+  | "histogram"
+  | "bar"
+  | "heatmap"
+  | "dose_response"
+  | "scatter"
+  | "box"
+  | "line"
+  | "grouped_bar"
+  | "correlation_matrix";
 export type Aggregate = "count" | "sum" | "avg" | "min" | "max";
 
 export interface ChartRequest {
@@ -83,6 +92,7 @@ export interface ChartSuggestion {
   title: string;
   description: string;
   request: ChartRequest;
+  rationale?: string | null;
 }
 
 export interface IngestResult {

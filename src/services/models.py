@@ -15,7 +15,17 @@ class _Frozen(BaseModel):
     model_config = ConfigDict(frozen=True, extra="forbid")
 
 
-ChartType = Literal["histogram", "bar", "heatmap", "dose_response", "scatter"]
+ChartType = Literal[
+    "histogram",
+    "bar",
+    "heatmap",
+    "dose_response",
+    "scatter",
+    "box",
+    "line",
+    "grouped_bar",
+    "correlation_matrix",
+]
 Aggregate = Literal["count", "sum", "avg", "min", "max"]
 
 
@@ -59,6 +69,10 @@ class ChartSuggestion(_Frozen):
     title: str
     description: str
     request: ChartRequest
+    rationale: str | None = Field(
+        default=None,
+        description="Why this chart is worth looking at (agentic suggestions only).",
+    )
 
 
 class DatasetSummary(_Frozen):

@@ -44,7 +44,7 @@ from services import (
     ServiceError,
     VisualizationService,
 )
-from services import library
+from services import library, suggestions_store
 from warehouse import CanonicalDB, SectionNotFoundError, Warehouse
 from warehouse import rows as row_ops
 
@@ -297,6 +297,11 @@ def create_app(root: str | Path, *, brain_factory=None) -> FastAPI:
 
     @app.get("/visualize/suggestions")
     def visualize_suggestions(section: str, table: str = "raw"):
+        # Prefer the agent-generated suggestions cached at ingest; fall back to
+        # the deterministic suggester when none were produced (e.g. no Ollama).
+        cached = suggestions_store.read(state.root, section, table)
+        if cached is not None:
+            return ok(cached)
         with state.lock, VisualizationService.open(state.root) as viz:
             return ok(viz.suggest(section, table))
 
@@ -331,6 +336,12 @@ def create_app(root: str | Path, *, brain_factory=None) -> FastAPI:
                     result = ingestor.ingest(staged, ts, biopack=biopack_cfg)
                 finally:
                     wh.close()
+
+        # Best-effort: let the agent propose smart charts for this dataset and
+        # cache them. Never let this fail the ingest — if Ollama is down or the
+        # proposal is unusable, the suggestions endpoint falls back to the
+        # deterministic suggester.
+        _generate_chart_suggestions(state, result.section, "raw")
 
         return ok(
             {
@@ -562,3 +573,22 @@ def _parse_biopack(raw: str | None) -> dict[str, str] | None:
     if not isinstance(cfg, dict):
         raise QueryError("biopack must be a JSON object of column -> transform")
     return {str(k): str(v) for k, v in cfg.items()}
+
+
+def _generate_chart_suggestions(state, section: str, table: str) -> None:
+    """Best-effort agentic chart suggestions, cached for the Visualize tab.
+
+    Swallows every error (Ollama down, unusable proposal, etc.) so it can never
+    fail an ingest. When nothing is produced, the suggestions endpoint falls back
+    to the deterministic suggester at read time.
+    """
+    try:
+        from services.chart_proposer import OllamaChartProposer
+
+        proposer = OllamaChartProposer()
+        with state.lock, VisualizationService.open(state.root) as viz:
+            suggestions = viz.generate_suggestions(section, table, proposer)
+        if suggestions:
+            suggestions_store.write(state.root, section, table, suggestions)
+    except Exception:
+        pass
