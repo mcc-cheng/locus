@@ -64,6 +64,20 @@ class RunStat(_Step):
     group_by: str | None = None
 
 
+class PlotSpec(_Step):
+    """Author ANY visualization directly: a read-only SELECT that returns the
+    columns to plot, plus a Vega-Lite spec describing the chart. The query results
+    are injected as the spec's data, so the chart shows real data from the user's
+    dataset, tailored to exactly what they asked for (not a fixed template)."""
+
+    kind: Literal["plot"]
+    section: str = ""
+    table: str = "raw"
+    sql: str = Field(description="A read-only SELECT from the virtual table `data`.")
+    spec: dict = Field(description="A Vega-Lite v5 spec; the query data is injected.")
+    title: str = ""
+
+
 class MakeFigure(_Step):
     """Generate a publication-style figure with matplotlib in a sandbox.
 
@@ -145,14 +159,30 @@ class Restructure(_Step):
     )
 
 
+class Define(_Step):
+    """Persist a semantic definition into the dataset's schema card (the agent's
+    long-term memory of meanings). Use when the user states what something means
+    or you establish a reusable definition — e.g. a metric ("active = ordered in
+    the last 30 days"), a column's meaning/units, or the dataset's purpose. These
+    definitions then appear in the schema card on every future turn."""
+
+    kind: Literal["define"]
+    section: str
+    target: Literal["dataset", "column", "metric"]
+    name: str = ""  # column name or metric name (not needed for 'dataset')
+    meaning: str = ""  # the definition / purpose text
+    units: str = ""  # for a column
+    sql: str = ""  # optional SQL that computes a metric
+
+
 class Answer(_Step):
     kind: Literal["answer"]
 
 
 AgentStep = Annotated[
     Union[
-        RunSql, MakeChart, RunStat, MakeFigure, CheckData, AskUser,
-        EditData, DeleteData, Restructure, Answer,
+        RunSql, MakeChart, PlotSpec, RunStat, MakeFigure, CheckData, AskUser,
+        EditData, DeleteData, Restructure, Define, Answer,
     ],
     Field(discriminator="kind"),
 ]

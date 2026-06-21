@@ -31,6 +31,7 @@ from services import (
     VisualizationService,
 )
 
+from . import schema_card
 from .brain import AgentError, Brain
 from .mutation import MutationAction
 from .stats import build_stat_script, parse_stat_output
@@ -38,10 +39,12 @@ from .steps import (
     Answer,
     AskUser,
     CheckData,
+    Define,
     DeleteData,
     EditData,
     MakeChart,
     MakeFigure,
+    PlotSpec,
     Restructure,
     RunSql,
     RunStat,
@@ -61,6 +64,7 @@ _MUTATE_INTENT = (
 MAX_STEPS = 8
 _PREVIEW_ROWS = 12
 _CELL = 60
+_MAX_PLOT_ROWS = 5000  # cap rows injected into a custom (plot) Vega spec
 
 _TOOLS_DOC = """\
 You are Locus's data analyst, helping a scientist explore their datasets and
@@ -69,10 +73,16 @@ default you only READ the data. You may also PROPOSE changes to the data (edit,
 delete, restructure) — but ONLY when the user explicitly asks you to change it,
 and every proposed change must be confirmed by the user before anything happens.
 
+You are GROUNDED by the schema card below: it states each table's purpose, every
+column's type/meaning/units with real example values, the relationships, curated
+metric definitions, and known gotchas. Trust it — never invent a column, value, or
+metric that is not in the card. If the user defines a term or metric, record it
+with the `define` step so it persists in the card.
+
 CRITICAL — every column is stored as TEXT (VARCHAR). For ANY numeric work
 (AVG, SUM, MIN, MAX, comparisons, math) you MUST cast: TRY_CAST("col" AS DOUBLE).
 e.g. SELECT AVG(TRY_CAST("age" AS DOUBLE)) FROM "section"."raw".
-The data profile below tells you which columns are numeric.
+The schema card marks which columns are numeric.
 
 Each turn, respond with JSON: {"thought":"...", "step":{...}}. Choose ONE step:
 
@@ -86,15 +96,34 @@ Each turn, respond with JSON: {"thought":"...", "step":{...}}. Choose ONE step:
       • rate/proportion of a category: AVG(CASE WHEN "responder"='yes' THEN 1.0 ELSE 0 END)
         (or COUNT(*) FILTER (WHERE "responder"='yes') * 1.0 / COUNT(*))
       • a percentage is that × 100. Group with GROUP BY for per-category results.
+- plot:       {"kind":"plot","sql":"SELECT ... FROM data","spec":{...vega-lite...},"title":"..."}
+    *** The PRIMARY way to make a visualization. *** Build EXACTLY the chart the
+    user asked for — any kind (scatter, line, box/violin, grouped/stacked bar,
+    area, faceted, multi-series, binned, etc.) — for THIS dataset. Two parts:
+      1) "sql": a read-only SELECT whose FROM clause is the virtual table named
+         `data` (it already refers to the current dataset's table — do NOT write a
+         schema or section name, just `FROM data`). Return the columns you want to
+         plot, cast numeric columns with TRY_CAST, and give readable aliases.
+         Aggregate/GROUP BY or LIMIT so you return a sensible number of rows.
+      2) "spec": a Vega-Lite v5 spec. Reference your SELECT's OUTPUT column aliases
+         in the encoding. Do NOT include the data — the query rows are injected
+         automatically. Set the encoding "type" correctly (quantitative for numbers,
+         nominal/ordinal for categories, temporal for dates).
+    Example — average inhibition per gene, sorted, as a bar chart:
+      {"kind":"plot",
+       "sql":"SELECT \"target_gene\" AS gene, AVG(TRY_CAST(\"pct_inhibition\" AS DOUBLE)) AS avg_inhibition FROM data GROUP BY 1 ORDER BY 2 DESC",
+       "spec":{"mark":"bar","encoding":{"x":{"field":"gene","type":"nominal","sort":"-y"},"y":{"field":"avg_inhibition","type":"quantitative"}}},
+       "title":"Average % inhibition by gene"}
+    Example — logP vs molecular weight, colored by gene (a scatter):
+      {"kind":"plot",
+       "sql":"SELECT TRY_CAST(\"logp\" AS DOUBLE) AS logp, TRY_CAST(\"mol_weight\" AS DOUBLE) AS mw, \"target_gene\" AS gene FROM data",
+       "spec":{"mark":"point","encoding":{"x":{"field":"logp","type":"quantitative"},"y":{"field":"mw","type":"quantitative"},"color":{"field":"gene","type":"nominal"}}}}
+    If a plot returns an ERROR, read it, fix the SQL or spec, and try plot again.
 - make_chart: {"kind":"make_chart","chart_type":"histogram|bar|heatmap|dose_response|scatter",
                "section":"...","table":"raw","x":"col","y":"col","color":"col",...}
-    A quick interactive chart of EXISTING columns (count, or sum/avg/min/max of a
-    numeric column). Give PLAIN column names (e.g. "score") — never SQL
-    expressions; the server casts numerics for you. If the user already agreed to
-    proceed despite missing values, set "confirm_incomplete": true.
-    For a COMPUTED metric (a rate, proportion, ratio, or any value you derive in
-    SQL), make_chart can't compute it — use make_figure instead (query the metric,
-    then plot it).
+    OPTIONAL shortcut for a few standard charts of existing columns (the server
+    aggregates/casts for you). Prefer "plot" whenever the user wants a specific
+    chart — make_chart only covers these fixed types.
 - make_figure:{"kind":"make_figure","code":"...python...","caption":"..."}
     A custom matplotlib figure for a report. In the sandbox, `con`, `pd`, `np`,
     and `plt` are ALREADY defined — do NOT import anything, do NOT call
@@ -111,6 +140,13 @@ Each turn, respond with JSON: {"thought":"...", "step":{...}}. Choose ONE step:
     A statistical test in a sandbox.
 - check_data: {"kind":"check_data","section":"...","table":"raw","columns":["a","b"]}
     Inspect columns for missing values / non-numeric entries before using them.
+- define:     {"kind":"define","section":"...","target":"metric|column|dataset",
+               "name":"...","meaning":"...","units":"...","sql":"..."}
+    Save a definition into the schema card so it persists. Use when the user states
+    what a term means or you establish a reusable metric — e.g. target "metric",
+    name "responder_rate", meaning "share of patients with responder='yes'",
+    sql "AVG(CASE WHEN \"responder\"='yes' THEN 1.0 ELSE 0 END)". After defining,
+    continue answering.
 - ask_user:   {"kind":"ask_user","question":"...","options":["...","..."]}
     PAUSE and ask the human, offering 2-4 short clickable options. This ends your
     turn until they choose.
@@ -148,8 +184,21 @@ Human-in-the-loop — real lab data has errors; never silently skip them:
   or a true ambiguity). For straightforward questions, just answer — don't ask
   unnecessary clarifying questions.
 
-Workflow: get REAL numbers (verify with COUNT/GROUP BY), handle data issues with the
-human, then answer. Create at most ONE chart or figure, then answer.
+Workflow: when the user asks for a chart/plot/graph/visualization, use "plot" to
+build exactly what they asked for from this dataset (you may run_sql first to check
+column names/values). For questions about numbers, get REAL numbers (verify with
+COUNT/GROUP BY) and handle data issues with the human. Make at most ONE chart, then
+answer briefly.
+
+Patterns to imitate (adapt the column/section names to the schema card above):
+  Q: "How many rows in each cohort?"
+  → run_sql: SELECT "cohort", COUNT(*) AS n FROM "sec"."raw" GROUP BY 1 ORDER BY 2 DESC
+  Q: "What's the average age of responders vs non-responders?"
+  → run_sql: SELECT "responder", AVG(TRY_CAST("age" AS DOUBLE)) AS avg_age
+             FROM "sec"."raw" GROUP BY 1
+  Q: "What fraction responded?"
+  → run_sql: SELECT AVG(CASE WHEN "responder"='yes' THEN 1.0 ELSE 0 END) AS rate
+             FROM "sec"."raw"
 """
 
 _ANSWER_SYSTEM = """\
@@ -255,95 +304,28 @@ class AnalystAgent:
             datasets = svc.list_datasets()
         if not datasets:
             return "No datasets have been uploaded yet."
-        # Scope to a single dataset when the user has one selected, so the agent
-        # focuses on the data they're actually working in (and uses its section).
+        # Schema linking: scope to the dataset the user is working in. For anything
+        # beyond it, the model gets a compact index, not every column of every table.
         if section is not None:
             scoped = [d for d in datasets if d.name == section]
             if scoped:
                 datasets = scoped
         qs = self._query_service()
-        if section is not None and len(datasets) == 1:
-            d0 = datasets[0]
-            lines = [
-                f'You are working in ONE dataset: section "{d0.name}" '
-                f"(from file {d0.source_filename}). Use this section in every tool; "
-                "do not reference any other dataset. All values are stored as TEXT — "
-                "cast numeric columns with TRY_CAST."
-            ]
-        else:
-            lines = [
-                "The user has these datasets. Use the EXACT section/table/column names. "
-                "All values are stored as TEXT — cast numeric columns with TRY_CAST."
-            ]
-        for d in datasets:
-            raw = next((t for t in d.tables if t.name == "raw"), d.tables[0])
-            other = [t.name for t in d.tables if t.name != raw.name]
-            lines.append(f'\n• section "{d.name}"  (file: {d.source_filename}, {raw.row_count} rows)')
-            if other:
-                lines.append(f"    other tables: {', '.join(other)}")
-            lines.append('    columns of "raw":')
-            for line in self._profile_columns(qs, d.name, [c.name for c in raw.columns]):
-                lines.append("      " + line)
-        return "\n".join(lines)
-
-    def _profile_columns(self, qs: QueryService, section: str, cols: list[str]) -> list[str]:
-        """One aggregate pass to classify each column and summarize it, so the
-        model knows types, ranges, and categories instead of guessing."""
-
-        def q(c: str) -> str:
-            return '"' + c.replace('"', '""') + '"'
-
-        raw = f'"{section}"."raw"'
-        parts = ["COUNT(*) AS n"]
-        for i, c in enumerate(cols):
-            qc = q(c)
-            parts += [
-                f"COUNT(DISTINCT {qc}) AS d{i}",
-                f"COUNT({qc}) AS nn{i}",
-                f"COUNT(TRY_CAST({qc} AS DOUBLE)) AS num{i}",
-                f"MIN(TRY_CAST({qc} AS DOUBLE)) AS lo{i}",
-                f"MAX(TRY_CAST({qc} AS DOUBLE)) AS hi{i}",
-                f"AVG(TRY_CAST({qc} AS DOUBLE)) AS av{i}",
-            ]
-        try:
-            res = qs.run(f"SELECT {', '.join(parts)} FROM {raw}", page_size=1)
-            row = dict(zip(res.columns, res.rows[0]))
-        except ServiceError:
-            return [", ".join(cols)]
-
-        out: list[str] = []
-        cat_budget = 10
-        for i, c in enumerate(cols):
-            n = row.get("n") or 0
-            distinct = int(row.get(f"d{i}") or 0)
-            nn = int(row.get(f"nn{i}") or 0)
-            num = int(row.get(f"num{i}") or 0)
-            numeric = nn > 0 and num / nn >= 0.8
-            nulls = (n - nn) if n else 0
-            note = f" ({nulls} null)" if nulls else ""
-            if numeric:
-                lo, hi, av = row.get(f"lo{i}"), row.get(f"hi{i}"), row.get(f"av{i}")
-                rng = (
-                    f"range {lo:g}–{hi:g}, mean {av:.3g}"
-                    if lo is not None and hi is not None
-                    else "numeric"
-                )
-                out.append(f'"{c}": numeric — {rng}{note}')
-            elif distinct <= 25 and cat_budget > 0:
-                cat_budget -= 1
-                try:
-                    vals = qs.run(
-                        f"SELECT DISTINCT {q(c)} FROM {raw} WHERE {q(c)} IS NOT NULL LIMIT 12",
-                        page_size=12,
-                    ).rows
-                    cats = ", ".join(str(v[0]) for v in vals)
-                except ServiceError:
-                    cats = ""
-                out.append(f'"{c}": categorical — {distinct} values: {cats}{note}')
-            else:
-                kind = "id/unique" if n and distinct >= 0.9 * n else "text"
-                out.append(f'"{c}": {kind} — {distinct} distinct{note}')
-        return out
+        cards = [
+            schema_card.build_card(qs, d, schema_card.load_curation(self.root, d.name))
+            for d in datasets
+        ]
+        if len(cards) == 1:
+            lead = (
+                "Here is the schema card for the ONE dataset you are working in. Use this "
+                "section in every tool; never invent a column or value not listed here."
+            )
+            return lead + "\n\n" + schema_card.render_card(cards[0])
+        lead = (
+            "Here are the user's datasets. Pick the ONE relevant to the question and use "
+            "its EXACT section/column names; never invent a column or value."
+        )
+        return lead + "\n\n" + schema_card.render_index(cards)
 
     def _query_service(self) -> QueryService:
         if self._qs is None:
@@ -440,6 +422,48 @@ class AnalystAgent:
             f"created a {step.chart_type} chart with {out.row_count} points",
             req.model_dump(),
         )
+
+    def _do_plot(self, step: PlotSpec, section: str | None = None) -> tuple[dict | None, str]:
+        """Run the model's SELECT and inject the rows into its Vega-Lite spec, so
+        the agent can build ANY chart it wants from real data — not a template.
+
+        The model writes its query against a virtual table ``data`` (we bind it to
+        the real ``"section"."table"`` here), which removes the error-prone job of
+        fully-qualifying the schema from the model."""
+        eff_section = section or step.section
+        if not eff_section:
+            return None, "ERROR: no dataset selected for the plot."
+        table = step.table or "raw"
+        user_sql = step.sql.replace("`", '"')
+        real = f'"{eff_section}"."{table}"'
+        # Bind `data` to the real table; if the model already qualified the table
+        # itself, the CTE is simply unused and its own FROM still works.
+        sql = f"WITH data AS (SELECT * FROM {real}) {user_sql}"
+        try:
+            res = self._query_service().run(sql, page=1, page_size=_MAX_PLOT_ROWS)
+        except ServiceError as exc:
+            return None, f"ERROR running the query: {exc}"
+        if not res.rows:
+            return None, (
+                "ERROR: the query returned 0 rows. Check the column names, your "
+                "filters, and that numeric columns are wrapped in TRY_CAST."
+            )
+        spec = step.spec
+        if not isinstance(spec, dict) or not spec:
+            return None, "ERROR: 'spec' must be a Vega-Lite object."
+        if not any(
+            k in spec for k in ("mark", "layer", "facet", "hconcat", "vconcat", "concat", "repeat")
+        ):
+            return None, "ERROR: the Vega-Lite spec needs a 'mark' (or layer/facet/concat)."
+        # Inject the real data; the model uses a "table"/named placeholder.
+        spec = dict(spec)
+        spec["data"] = {"values": [dict(zip(res.columns, r)) for r in res.rows]}
+        spec.setdefault("$schema", "https://vega.github.io/schema/vega-lite/v5.json")
+        if step.title and "title" not in spec:
+            spec["title"] = step.title
+        spec.setdefault("width", "container")
+        spec.setdefault("height", 260)
+        return spec, f"created a custom chart with {len(res.rows)} rows"
 
     def _do_figure(self, step: MakeFigure) -> tuple[str | None, str]:
         """Run the model's matplotlib code in a sandbox and return the figure as
@@ -625,6 +649,22 @@ class AnalystAgent:
                     }
                     msgs.append({"role": "assistant", "content": f"make_chart: {step.chart_type}"})
                     msgs.append({"role": "user", "content": f"Observation: {obs}"})
+                elif isinstance(step, PlotSpec):
+                    spec, summary = self._do_plot(step, section)
+                    if spec is not None:
+                        yield {"type": "chart", "spec": spec, "chart_request": None}
+                        obs = (
+                            f"{summary}. The chart is now shown to the user. Use the "
+                            "'answer' step next and describe what it shows briefly."
+                        )
+                    else:
+                        obs = summary  # an ERROR string — the model can fix and retry
+                    yield {
+                        "type": "step", "tool": "plot", "thought": decision.thought,
+                        "summary": summary,
+                    }
+                    msgs.append({"role": "assistant", "content": f"plot: {step.sql}"})
+                    msgs.append({"role": "user", "content": f"Observation: {obs}"})
                 elif isinstance(step, CheckData):
                     issues = self._column_issues(step.section, step.table, step.columns)
                     if issues:
@@ -640,6 +680,21 @@ class AnalystAgent:
                     }
                     msgs.append({"role": "assistant", "content": "check_data"})
                     msgs.append({"role": "user", "content": f"Data check: {obs}"})
+                elif isinstance(step, Define):
+                    sec = step.section or section or ""
+                    if not sec:
+                        obs = "ERROR: no dataset to define against."
+                    else:
+                        obs = schema_card.define(
+                            self.root, sec, target=step.target, name=step.name,
+                            meaning=step.meaning, units=step.units, sql=step.sql,
+                        )
+                    yield {
+                        "type": "step", "tool": "define", "thought": decision.thought,
+                        "summary": obs,
+                    }
+                    msgs.append({"role": "assistant", "content": "define"})
+                    msgs.append({"role": "user", "content": f"Observation: {obs}"})
                 elif isinstance(step, AskUser):
                     opts = [o for o in step.options if o.strip()] or ["Yes", "No"]
                     yield {"type": "ask", "question": step.question, "options": opts}

@@ -219,6 +219,67 @@ def test_check_data_reports_issues(tmp_path):
     assert "1 missing" in check["summary"]
 
 
+# ---- custom visualizations (the plot tool) ----------------------------------
+
+
+def test_plot_builds_custom_chart_from_sql(agent_root):
+    root, section = agent_root
+    from agentic.steps import PlotSpec
+
+    steps = [
+        PlotSpec(
+            kind="plot",
+            section=section,
+            sql='SELECT "grp" AS g, COUNT(*) AS n FROM data GROUP BY 1 ORDER BY 1',
+            spec={
+                "mark": "bar",
+                "encoding": {
+                    "x": {"field": "g", "type": "nominal"},
+                    "y": {"field": "n", "type": "quantitative"},
+                },
+            },
+            title="Rows per group",
+        ),
+    ]
+    turn = _agent(root, steps, answer="Here is the chart.").handle("bar chart of rows per group")
+    assert turn.charts, "expected a chart event from the plot tool"
+    spec = turn.charts[0]["spec"]
+    # real query rows were injected as the spec's data
+    assert spec["data"]["values"], "the SQL rows should be injected into the spec"
+    assert {row["g"] for row in spec["data"]["values"]} == {"A", "B"}
+    assert spec["mark"] == "bar" and spec["title"] == "Rows per group"
+
+
+def test_plot_uses_scoped_section_and_data_alias(agent_root):
+    # The model writes `FROM data` (no schema); the scoped section binds it.
+    root, section = agent_root
+    from agentic.steps import PlotSpec
+
+    steps = [
+        PlotSpec(
+            kind="plot",
+            sql="SELECT COUNT(*) AS n FROM data",
+            spec={"mark": "bar", "encoding": {"y": {"field": "n", "type": "quantitative"}}},
+        ),
+    ]
+    turn = _agent(root, steps, answer="ok").handle("how many rows, as a chart", section=section)
+    assert turn.charts
+    assert turn.charts[0]["spec"]["data"]["values"][0]["n"] == 6
+
+
+def test_plot_bad_sql_is_reported_not_crashed(agent_root):
+    root, section = agent_root
+    from agentic.steps import PlotSpec
+
+    steps = [
+        PlotSpec(kind="plot", section=section, sql="SELECT nope FROM data", spec={"mark": "bar"}),
+    ]
+    turn = _agent(root, steps, answer="couldn't plot").handle("plot something", section=section)
+    assert not turn.charts  # nothing rendered
+    plot_step = next(e for e in turn.events if e["type"] == "step" and e["tool"] == "plot")
+    assert "ERROR" in (plot_step["summary"] or "")
+
+
 # ---- dataset scoping --------------------------------------------------------
 
 

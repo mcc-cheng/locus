@@ -62,6 +62,7 @@ function datasetLabel(d: DatasetSummary | null): string {
 const TOOL_LABEL: Record<string, string> = {
   run_sql: "Queried the data",
   make_chart: "Built a chart",
+  plot: "Built a chart",
   run_stat: "Ran a statistical test",
   propose_change: "Proposed a data change",
   blocked_mutation: "Declined to change data",
