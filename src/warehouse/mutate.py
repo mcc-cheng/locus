@@ -123,6 +123,35 @@ def add_column(con: duckdb.DuckDBPyConnection, section: str, table: str, column:
     con.execute(f"ALTER TABLE {_raw(section, table)} ADD COLUMN {quote_ident(column)} VARCHAR")
 
 
+def add_computed_column(
+    con: duckdb.DuckDBPyConnection, section: str, table: str, column: str, formula: str
+) -> int:
+    """Add a column whose values are computed from a SQL expression over the other
+    columns (the spreadsheet-"formula" feature). The expression is evaluated once
+    per row and the result stored verbatim as text. Returns the number of rows
+    filled. Atomic: if the formula is invalid, the column is not left behind."""
+    if not column.strip():
+        raise ValueError("column name is required")
+    if column in columns(con, section, table):
+        raise ValueError(f"column {column!r} already exists")
+    f = formula.strip().replace("`", '"')
+    if not f:
+        raise ValueError("a formula is required")
+    if ";" in f:
+        raise ValueError("a formula may not contain ';' (only a single expression)")
+    raw = _raw(section, table)
+    con.execute("BEGIN TRANSACTION")
+    try:
+        con.execute(f"ALTER TABLE {raw} ADD COLUMN {quote_ident(column)} VARCHAR")
+        con.execute(f"UPDATE {raw} SET {quote_ident(column)} = ({f})")
+        n = int(con.execute(f"SELECT COUNT(*) FROM {raw}").fetchone()[0])
+        con.execute("COMMIT")
+    except Exception:
+        con.execute("ROLLBACK")  # also removes the half-added column
+        raise
+    return n
+
+
 def drop_column(con: duckdb.DuckDBPyConnection, section: str, table: str, column: str) -> None:
     _require_column(con, section, table, column)
     if len(columns(con, section, table)) <= 1:

@@ -50,6 +50,45 @@ def test_delete_unknown_row_404(client_section):
     assert client.delete(f"/datasets/{section}/rows/99999").status_code == 404
 
 
+def test_add_empty_column(client_section):
+    client, section, _ = client_section
+    r = client.post(f"/datasets/{section}/columns", json={"name": "notes"})
+    assert r.status_code == 201 and r.json()["data"]["computed"] is False
+    cols = client.get(f"/datasets/{section}/rows").json()["data"]["columns"]
+    assert cols == ["name", "age", "notes"]
+
+
+def test_add_computed_column_formula(client_section):
+    # a spreadsheet-style formula over existing columns
+    client, section, _ = client_section
+    r = client.post(
+        f"/datasets/{section}/columns",
+        json={"name": "age_in_5y", "formula": 'TRY_CAST("age" AS DOUBLE) + 5'},
+    )
+    assert r.status_code == 201 and r.json()["data"] == {
+        "column": "age_in_5y", "computed": True, "rows": 3,
+    }
+    rows = client.get(f"/datasets/{section}/rows").json()["data"]["rows"]
+    # Alice was 30 -> 35
+    alice = next(x for x in rows if x["cells"][0] == "Alice")
+    assert alice["cells"][-1] == "35.0"
+
+
+def test_bad_formula_is_rejected_and_leaves_no_column(client_section):
+    client, section, _ = client_section
+    r = client.post(
+        f"/datasets/{section}/columns",
+        json={"name": "oops", "formula": "no_such_column + 1"},
+    )
+    assert r.status_code == 400
+    assert "oops" not in client.get(f"/datasets/{section}/rows").json()["data"]["columns"]
+
+
+def test_duplicate_column_rejected(client_section):
+    client, section, _ = client_section
+    assert client.post(f"/datasets/{section}/columns", json={"name": "age"}).status_code == 400
+
+
 def test_editing_never_touches_preserved_source(client_section):
     client, section, tmp_path = client_section
     src = tmp_path / "wh" / "source" / section / "people.csv"

@@ -1,5 +1,4 @@
 import { useEffect, useState } from "react";
-import type { Result } from "vega-embed";
 import { api } from "../api/client";
 import type {
   Aggregate,
@@ -11,7 +10,7 @@ import type {
   VisualizationResult,
 } from "../api/types";
 import { useApp } from "../store";
-import { VegaChart } from "../components/VegaChart";
+import { VegaChart, type ChartView } from "../components/VegaChart";
 import { Badge, Button, Card, ErrorBox, Field, PageTitle, Select, Spinner } from "../components/ui";
 import { BookmarkIcon, DownloadIcon } from "../components/icons";
 import { SaveToLibraryDialog } from "../components/SaveToLibraryDialog";
@@ -56,7 +55,7 @@ export function Visualize() {
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [showSpec, setShowSpec] = useState(false);
-  const [view, setView] = useState<Result | null>(null);
+  const [view, setView] = useState<ChartView | null>(null);
   const [lastReq, setLastReq] = useState<ChartRequest | null>(null);
   const [saved, setSaved] = useState(false);
   const [saveOpen, setSaveOpen] = useState(false);
@@ -132,8 +131,8 @@ export function Visualize() {
     if (!view) return;
     const url =
       format === "svg"
-        ? "data:image/svg+xml;charset=utf-8," + encodeURIComponent(await view.view.toSVG())
-        : await view.view.toImageURL("png", 2);
+        ? "data:image/svg+xml;charset=utf-8," + encodeURIComponent(await view.toSVG())
+        : await view.toImageURL("png", 2);
     const a = document.createElement("a");
     a.href = url;
     a.download = `chart.${format}`;

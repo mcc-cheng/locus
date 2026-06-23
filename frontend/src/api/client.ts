@@ -76,6 +76,11 @@ export const api = {
     ),
   addRow: (section: string, values: Record<string, string | null> = {}) =>
     postJSON<{ rid: number }>(`/datasets/${encodeURIComponent(section)}/rows`, { values }),
+  addColumn: (section: string, name: string, formula?: string) =>
+    postJSON<{ column: string; computed: boolean; rows?: number }>(
+      `/datasets/${encodeURIComponent(section)}/columns`,
+      { name, formula: formula ?? null },
+    ),
   async patchCell(section: string, rid: number, column: string, value: string | null) {
     return unwrap<{ rid: number; column: string }>(
       await fetch(`${API_BASE}/datasets/${encodeURIComponent(section)}/rows/${rid}`, {

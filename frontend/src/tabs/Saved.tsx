@@ -1,9 +1,8 @@
 import { useEffect, useMemo, useState } from "react";
-import type { Result } from "vega-embed";
 import { api } from "../api/client";
 import type { SavedItem } from "../api/types";
 import { useApp } from "../store";
-import { VegaChart } from "../components/VegaChart";
+import { VegaChart, type ChartView } from "../components/VegaChart";
 import { Button, Card, ErrorBox, PageTitle, Spinner } from "../components/ui";
 import { BookmarkIcon, ChevronRight, DownloadIcon, TrashIcon } from "../components/icons";
 
@@ -171,14 +170,14 @@ function SavedCard({
   onOpen: (req: NonNullable<SavedItem["chart_request"]>) => void;
   onDelete: (id: string) => void;
 }) {
-  const [view, setView] = useState<Result | null>(null);
+  const [view, setView] = useState<ChartView | null>(null);
 
   async function downloadPng() {
     let url: string;
     if (item.kind === "figure" && item.image) {
       url = item.image;
     } else if (view) {
-      url = await view.view.toImageURL("png", 2);
+      url = await view.toImageURL("png", 2);
     } else {
       return;
     }

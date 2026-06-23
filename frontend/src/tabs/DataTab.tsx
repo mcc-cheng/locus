@@ -4,6 +4,7 @@ import type { DataRow, DatasetSummary } from "../api/types";
 import { useApp } from "../store";
 import { Badge, Button, ErrorBox, Select, Spinner } from "../components/ui";
 import { PlusIcon, TrashIcon } from "../components/icons";
+import { AddColumnDialog } from "./AddColumnDialog";
 
 const PAGE = 100;
 
@@ -20,6 +21,7 @@ export function DataTab() {
   const [editing, setEditing] = useState<{ rid: number; ci: number } | null>(null);
   const [editValue, setEditValue] = useState("");
   const [saving, setSaving] = useState(false);
+  const [addColOpen, setAddColOpen] = useState(false);
   const scrollRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -192,6 +194,9 @@ export function DataTab() {
               <Button variant="primary" size="sm" onClick={addRow} disabled={saving}>
                 <PlusIcon className="h-4 w-4" /> Add row
               </Button>
+              <Button variant="secondary" size="sm" onClick={() => setAddColOpen(true)}>
+                <PlusIcon className="h-4 w-4" /> Add column
+              </Button>
               <Button variant="secondary" size="sm" onClick={exportCsv}>
                 Export CSV
               </Button>
@@ -288,6 +293,19 @@ export function DataTab() {
             </div>
           )}
         </div>
+      )}
+
+      {addColOpen && section && (
+        <AddColumnDialog
+          section={section}
+          columns={columns}
+          rows={rows}
+          onClose={() => setAddColOpen(false)}
+          onAdded={() => {
+            load(section, true);
+            refreshSchema();
+          }}
+        />
       )}
     </div>
   );

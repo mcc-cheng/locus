@@ -1,14 +1,54 @@
 import { useMemo } from "react";
 import { marked } from "marked";
 import DOMPurify from "dompurify";
+import katex from "katex";
+import "katex/dist/katex.min.css";
 
 marked.setOptions({ breaks: true, gfm: true });
 
-/** Render a Markdown string as sanitized HTML with compact, readable styling. */
+// Private-use sentinels so math placeholders survive Markdown + sanitization.
+const OPEN = "";
+const CLOSE = "";
+
+/** Pull LaTeX out of the text and pre-render it with KaTeX, leaving placeholders
+ *  that Markdown won't touch. Handles $$…$$ / \[…\] (block) and $…$ / \(…\)
+ *  (inline). The inline $ form requires non-space boundaries so prose like
+ *  "it cost $5 and $10" isn't treated as math. */
+function extractMath(text: string): { text: string; math: string[] } {
+  const math: string[] = [];
+  const stash = (tex: string, display: boolean) => {
+    let html: string;
+    try {
+      html = katex.renderToString(tex.trim(), { displayMode: display, throwOnError: false });
+    } catch {
+      html = display ? `$$${tex}$$` : `$${tex}$`;
+    }
+    math.push(html);
+    return `${OPEN}${math.length - 1}${CLOSE}`;
+  };
+  return {
+    text: text
+      .replace(/\$\$([\s\S]+?)\$\$/g, (_, e) => stash(e, true))
+      .replace(/\\\[([\s\S]+?)\\\]/g, (_, e) => stash(e, true))
+      .replace(/\\\(([\s\S]+?)\\\)/g, (_, e) => stash(e, false))
+      .replace(/\$(?!\s)([^$\n]+?)(?<!\s)\$/g, (_, e) => stash(e, false)),
+    math,
+  };
+}
+
+/** Render a Markdown string (with LaTeX) as sanitized HTML. */
 export function Markdown({ text }: { text: string }) {
   const html = useMemo(() => {
-    const raw = marked.parse(text ?? "", { async: false }) as string;
-    return DOMPurify.sanitize(raw);
+    const { text: protectedText, math } = extractMath(text ?? "");
+    const raw = marked.parse(protectedText, { async: false }) as string;
+    let clean = DOMPurify.sanitize(raw);
+    // Re-insert the locally-generated (trusted) KaTeX HTML after sanitization,
+    // so its spans/styles aren't stripped.
+    clean = clean.replace(
+      new RegExp(`${OPEN}(\\d+)${CLOSE}`, "g"),
+      (_, i) => math[Number(i)] ?? "",
+    );
+    return clean;
   }, [text]);
 
   return (

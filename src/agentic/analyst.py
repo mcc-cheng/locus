@@ -461,7 +461,8 @@ class AnalystAgent:
         spec.setdefault("$schema", "https://vega.github.io/schema/vega-lite/v5.json")
         if step.title and "title" not in spec:
             spec["title"] = step.title
-        spec.setdefault("width", "container")
+        # Width is set by the renderer to fit its container; just give a height.
+        spec.pop("width", None)
         spec.setdefault("height", 260)
         return spec, f"created a custom chart with {len(res.rows)} rows"
 

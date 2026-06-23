@@ -46,6 +46,7 @@ from services import (
 )
 from services import library, suggestions_store
 from warehouse import CanonicalDB, SectionNotFoundError, Warehouse
+from warehouse import mutate as mutate_ops
 from warehouse import rows as row_ops
 
 from .envelopes import err, ok
@@ -76,6 +77,11 @@ class RowAppendBody(BaseModel):
 class CellPatchBody(BaseModel):
     column: str
     value: str | None = None
+
+
+class AddColumnBody(BaseModel):
+    name: str
+    formula: str | None = None  # optional SQL expression -> a computed column
 
 
 class SaveItemBody(BaseModel):
@@ -230,6 +236,25 @@ def create_app(root: str | Path, *, brain_factory=None) -> FastAPI:
             finally:
                 wh.close()
         return ok({"rid": rid}, status_code=201)
+
+    @app.post("/datasets/{section}/columns")
+    def add_column(section: str, body: AddColumnBody):
+        with state.lock:
+            wh = Warehouse.open(state.root, verify_sources=False)
+            try:
+                if body.formula and body.formula.strip():
+                    n = mutate_ops.add_computed_column(wh.con, section, "raw", body.name, body.formula)
+                    result = {"column": body.name, "computed": True, "rows": n}
+                else:
+                    mutate_ops.add_column(wh.con, section, "raw", body.name)
+                    result = {"column": body.name, "computed": False}
+            except ValueError as exc:
+                return err(str(exc), status_code=400)
+            except Exception as exc:  # noqa: BLE001 — surface a bad formula to the user
+                return err(f"Could not add the column: {exc}", status_code=400)
+            finally:
+                wh.close()
+        return ok(result, status_code=201)
 
     @app.patch("/datasets/{section}/rows/{rid}")
     def patch_cell(section: str, rid: int, body: CellPatchBody):
