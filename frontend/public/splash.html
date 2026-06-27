@@ -2,7 +2,7 @@
 <html lang="en">
   <head>
     <meta charset="UTF-8" />
-    <title>Locus</title>
+    <title>Annulus</title>
     <style>
       html, body { height: 100%; margin: 0; font-family: ui-sans-serif, system-ui, sans-serif; }
       body {
@@ -60,8 +60,8 @@
         <circle cx="36" cy="36" r="4" fill="#363651"/>
         <circle cx="48" cy="36" r="4" fill="#363651"/>
       </svg>
-      <h1>Locus</h1>
-      <div id="status">Starting the Locus engine…</div>
+      <h1>Annulus AI</h1>
+      <div id="status">Starting the Annulus engine…</div>
       <div class="spinner" id="spinner"></div>
       <div id="err"></div>
       <button id="retry">Retry</button>
@@ -75,7 +75,7 @@
 
       event.listen("sidecar-error", (e) => {
         spinner.style.display = "none";
-        status.textContent = "Couldn't start the Locus engine.";
+        status.textContent = "Couldn't start the Annulus engine.";
         err.style.display = "block";
         err.textContent = String(e.payload || "");
         retry.style.display = "inline-block";

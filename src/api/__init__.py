@@ -1,1 +1,1 @@
-"""Locus API layer (Phase 3.4)."""
+"""Annulus API layer (Phase 3.4)."""

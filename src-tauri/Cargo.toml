@@ -1,12 +1,12 @@
 [package]
-name = "locus"
+name = "annulus"
 version = "0.1.0"
-description = "Biomedical Data Aggregator"
+description = "Annulus AI"
 edition = "2021"
 rust-version = "1.77"
 
 [lib]
-name = "locus_lib"
+name = "annulus_lib"
 crate-type = ["staticlib", "cdylib", "rlib"]
 
 [build-dependencies]

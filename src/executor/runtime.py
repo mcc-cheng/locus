@@ -125,8 +125,8 @@ def _base_env(handle: SandboxHandle, out_dir: Path) -> dict:
     env = dict(os.environ)
     env.update(
         {
-            "LOCUS_SANDBOX_DB": str(handle.db_path),
-            "LOCUS_SANDBOX_OUT": str(out_dir),
+            "ANNULUS_SANDBOX_DB": str(handle.db_path),
+            "ANNULUS_SANDBOX_OUT": str(out_dir),
             "MPLBACKEND": "Agg",
             "PYTHONDONTWRITEBYTECODE": "1",
         }
@@ -185,7 +185,7 @@ for _n in ("create_connection", "create_server"):
     if hasattr(socket, _n): setattr(socket, _n, _blocked)
 import papermill as pm
 inp, outp = sys.argv[1], sys.argv[2]
-pm.execute_notebook(inp, outp, parameters={"db_path": os.environ["LOCUS_SANDBOX_DB"]}, progress_bar=False)
+pm.execute_notebook(inp, outp, parameters={"db_path": os.environ["ANNULUS_SANDBOX_DB"]}, progress_bar=False)
 """
 
 

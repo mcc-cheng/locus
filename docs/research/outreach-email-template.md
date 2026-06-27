@@ -1,4 +1,4 @@
-# Locus — Outreach Email Template
+# Annulus AI — Outreach Email Template
 
 **Date:** 2026-06-24
 **Use:** cold/warm outreach to lab PIs. Fill in every `[bracketed]` field. ~130 words — fits on one screen so a professor can read it and reply yes/no in seconds.
@@ -20,9 +20,9 @@
 
 > Dear Professor [PROF LAST NAME],
 >
-> I'm [YOUR NAME], [YOUR ROLE] at [TEAM/COMPANY NAME][, reaching out via [MUTUAL CONNECTION] / — I came across your work on [SPECIFIC RESEARCH AREA]]. We're building **Locus**, and I think it could save your lab real time.
+> I'm [YOUR NAME], [YOUR ROLE] at [TEAM/COMPANY NAME][, reaching out via [MUTUAL CONNECTION] / — I came across your work on [SPECIFIC RESEARCH AREA]]. We're building **Annulus**, and I think it could save your lab real time.
 >
-> Locus is a **desktop app that lets your team analyze data just by asking** — questions, charts, and statistics in plain English — with an AI assistant that runs **entirely on your own computer**. Your data never leaves the machine and nothing goes to the cloud, so it works with [SPECIFIC DATA TYPE] without privacy or IP concerns. It's built for lab members who live in Excel, not for programmers.
+> Annulus is a **desktop app that lets your team analyze data just by asking** — questions, charts, and statistics in plain English — with an AI assistant that runs **entirely on your own computer**. Your data never leaves the machine and nothing goes to the cloud, so it works with [SPECIFIC DATA TYPE] without privacy or IP concerns. It's built for lab members who live in Excel, not for programmers.
 >
 > Given your lab's work with [SPECIFIC DATA TYPE / WORKFLOW], I'd love to give you **free early access** and get your feedback.
 >

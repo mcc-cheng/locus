@@ -1,4 +1,4 @@
-"""Generate a set of trial CSVs for exploring Locus.
+"""Generate a set of trial CSVs for exploring Annulus.
 
 Run:  python samples/generate_samples.py
 Writes the CSVs into the samples/ directory (deterministic — fixed seed).

@@ -34,8 +34,8 @@ interface AppState {
 
 const Ctx = createContext<AppState | null>(null);
 
-const PANEL_KEY = "locus.panelCollapsed";
-const NAV_KEY = "locus.navCollapsed";
+const PANEL_KEY = "annulus.panelCollapsed";
+const NAV_KEY = "annulus.navCollapsed";
 
 export function AppProvider({ children }: { children: ReactNode }) {
   const [tab, setTab] = useState<Tab>("home");

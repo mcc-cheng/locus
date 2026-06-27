@@ -1,4 +1,4 @@
-"""Locus service layer (Phase 3): read-only schema, query, and visualization."""
+"""Annulus service layer (Phase 3): read-only schema, query, and visualization."""
 
 from .errors import (
     QueryError,

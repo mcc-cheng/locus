@@ -1,22 +1,22 @@
-# Locus — Biomedical Data Aggregator
+# Annulus AI
 
 **Turn your spreadsheets into a queryable, explorable data warehouse — without
 ever changing a single value in your data.**
 
-Locus is a desktop app for scientists and analysts. Drop in a CSV and it builds a
+Annulus is a desktop app for scientists and analysts. Drop in a CSV and it builds a
 clean, connected view of your data that you can browse, chart, ask questions
 about in plain English, and run experiments on — all on your own machine. Your
 original files are preserved byte-for-byte and never altered.
 
 ---
 
-## Why Locus
+## Why Annulus
 
 - **Your original is never changed.** Every value is ingested exactly as you typed
-  it — no rounding, no reformatting, no dropped rows. Locus keeps a verbatim copy
+  it — no rounding, no reformatting, no dropped rows. Annulus keeps a verbatim copy
   of each file you upload and checks it on every launch, so even after you edit the
   working data it stays recoverable.
-- **Provably faithful.** Before any upload is finalized, Locus runs a battery of
+- **Provably faithful.** Before any upload is finalized, Annulus runs a battery of
   checks proving the structured version reconstructs your original data exactly.
   If anything wouldn't match, the upload is rejected — never silently "fixed."
 - **Ask questions in plain English.** A built-in analyst (running a local AI model
@@ -53,22 +53,22 @@ ollama pull qwen3:30b-a3b     # recommended — best balance of smart + fast
 ollama pull qwen3:8b
 ```
 
-You can pin a specific model with `LOCUS_AGENT_MODEL`:
+You can pin a specific model with `ANNULUS_AGENT_MODEL`:
 
 ```bash
-LOCUS_AGENT_MODEL=qwen3:8b ./dev.sh          # force a particular model
-LOCUS_AGENT_THINK=0 ./dev.sh                 # turn reasoning off (faster, terser)
+ANNULUS_AGENT_MODEL=qwen3:8b ./dev.sh          # force a particular model
+ANNULUS_AGENT_THINK=0 ./dev.sh                 # turn reasoning off (faster, terser)
 ```
 
 On a reasoning model (Qwen3) the analyst **thinks before answering by default** —
 the chain-of-thought is kept in a separate channel so the final answer stays
 clean, while accuracy improves. This is a no-op on non-reasoning models (Qwen2.5).
-Set `LOCUS_AGENT_THINK=0` to trade some quality for speed. If Ollama isn't set up,
+Set `ANNULUS_AGENT_THINK=0` to trade some quality for speed. If Ollama isn't set up,
 every other feature still works.
 
 ## First launch
 
-Double-click the app. You'll see a brief "Starting the Locus engine…" screen
+Double-click the app. You'll see a brief "Starting the Annulus engine…" screen
 while it spins up, then the dashboard opens. On the left are five tabs: **Home**,
 **Upload**, **Data**, **Visualize**, and **Sandbox**. The **analyst chat** lives
 behind the button in the bottom-right corner.
@@ -84,7 +84,7 @@ behind the button in the bottom-right corner.
 4. *(Optional)* Turn on **biomedical normalization** if you want SMILES strings
    canonicalized or gene/dose columns parsed. It's **off by default**, and when on
    it keeps your original values untouched alongside the normalized ones.
-5. Click **Ingest**. Locus stores your file verbatim, builds the schema, runs its
+5. Click **Ingest**. Annulus stores your file verbatim, builds the schema, runs its
    integrity checks, and shows you a summary.
 
 ## Browsing and exporting
@@ -128,7 +128,7 @@ original data.* Click **Destroy** when you're done.
 
 ## For developers
 
-Locus is a Python backend (FastAPI + DuckDB) packaged as a desktop app via Tauri,
+Annulus is a Python backend (FastAPI + DuckDB) packaged as a desktop app via Tauri,
 with a React/TypeScript/Tailwind frontend.
 
 ```bash

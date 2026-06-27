@@ -1,4 +1,4 @@
-"""Locus sandbox executor (Phase 4): isolated, disposable experiment runtimes."""
+"""Annulus sandbox executor (Phase 4): isolated, disposable experiment runtimes."""
 
 from .runtime import SandboxLimits, SandboxRunResult, run_notebook, run_script
 from .sandbox import SandboxHandle, SandboxManager

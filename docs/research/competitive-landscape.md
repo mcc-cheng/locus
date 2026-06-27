@@ -1,7 +1,7 @@
-# Locus — Competitive Landscape & Differentiation
+# Annulus AI — Competitive Landscape & Differentiation
 
 **Date:** 2026-06-24
-**Subject:** Where Locus sits versus lab-informatics platforms, "chat-with-your-data" AI tools, and local-first/on-device LLM apps — why this hasn't been built before, and the defensible differentiators.
+**Subject:** Where Annulus sits versus lab-informatics platforms, "chat-with-your-data" AI tools, and local-first/on-device LLM apps — why this hasn't been built before, and the defensible differentiators.
 
 *Method: multi-source web research with 3-vote adversarial fact-checking (22 of 25 candidate claims confirmed, 3 refuted). Confidence is flagged per claim; vendor privacy/no-training claims are self-reported and not independently audited.*
 
@@ -9,7 +9,7 @@
 
 ## Headline finding
 
-**No product currently occupies Locus's exact intersection:** a private/on-device LLM analyst over *tabular scientific data*, *non-destructive*, for *non-technical lab users*, *offline on the desktop*. Every competitor owns one or two of those axes — none owns all of them.
+**No product currently occupies Annulus's exact intersection:** a private/on-device LLM analyst over *tabular scientific data*, *non-destructive*, for *non-technical lab users*, *offline on the desktop*. Every competitor owns one or two of those axes — none owns all of them.
 
 The sobering counterpoint: the *generic* pattern (a local LLM turning plain-language questions into charts over local tables) **already exists** in at least one shipping product (Duckle). So the defensible moat is the **lab-vertical depth and trust guarantees**, not the local-AI technology itself.
 
@@ -40,7 +40,7 @@ Two enabling forces only recently converged.
 
 **2. Demand (now acute).** Life-sciences buyers handling PHI, genetic data, and proprietary compounds face HIPAA/GDPR pressure and fear IP leaking into cloud-model training; on-prem keeps data "within the firewall." The Samsung ChatGPT IP-leak ban (2023) is the canonical fear.
 
-**Plus a structural business-model reason.** Incumbents are cloud-SaaS by design (recurring revenue, data gravity, lock-in). A local, offline, one-time-download tool runs *against their interest* — they are unlikely to rush to cannibalize it. That is structural protection for Locus.
+**Plus a structural business-model reason.** Incumbents are cloud-SaaS by design (recurring revenue, data gravity, lock-in). A local, offline, one-time-download tool runs *against their interest* — they are unlikely to rush to cannibalize it. That is structural protection for Annulus.
 
 ---
 
@@ -53,9 +53,9 @@ The moat is the **combination** — and specifically the lab-vertical parts a ge
 3. **Private + on-device + zero-setup, together** — Benchling/Dotmatics/Scispot/Julius cannot claim it; LabKey is on-prem but has no local LLM; Duckle has it but is not built for scientists.
 4. **Non-technical scientist UX** — Vanna is for developers; LIMS platforms need admins. A scientist double-clicks an app.
 
-### Where Locus does NOT compete
+### Where Annulus does NOT compete
 
-Not a LIMS/ELN (no sample/inventory/bioregistry), not multi-user collaboration, not enterprise BI, not GxP / 21-CFR-Part-11 compliance workflows. Locus is the **private analysis layer**, not the system of record.
+Not a LIMS/ELN (no sample/inventory/bioregistry), not multi-user collaboration, not enterprise BI, not GxP / 21-CFR-Part-11 compliance workflows. Annulus is the **private analysis layer**, not the system of record.
 
 ---
 
@@ -63,7 +63,7 @@ Not a LIMS/ELN (no sample/inventory/bioregistry), not multi-user collaboration, 
 
 1. **"Privacy" alone is not a slam-dunk.** Cloud AI *can* be HIPAA/GDPR-compliant via BAAs/DPAs — regulation drives *demand for* private inference, it does not *mandate* it. The pitch must be **"private AND zero-setup AND lab-native AND free/offline,"** not privacy alone.
 2. **Dotmatics already has deployed NL query** (three claims to the contrary were refuted 0-3). Do not claim incumbents lack AI — say they lack *private, local, non-destructive, lab-native* AI.
-3. **Small-model reliability is the real product risk.** Can gemma/qwen do text-to-SQL and stats reliably enough versus competitors using GPT-4/Claude? Locus's scaffolding (schema card, validate-and-repair, structured tool calls) is the answer — and arguably itself a moat. Make it a visible feature.
+3. **Small-model reliability is the real product risk.** Can gemma/qwen do text-to-SQL and stats reliably enough versus competitors using GPT-4/Claude? Annulus's scaffolding (schema card, validate-and-repair, structured tool calls) is the answer — and arguably itself a moat. Make it a visible feature.
 
 ---
 

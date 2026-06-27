@@ -3,8 +3,8 @@
 Runs as ``python _bootstrap.py <user_script.py>`` inside the resource-limited
 child. Reads two env vars:
 
-  LOCUS_SANDBOX_DB   path to the writable clone DuckDB (the ONLY db it knows)
-  LOCUS_SANDBOX_OUT  directory to write artifacts (plots) into
+  ANNULUS_SANDBOX_DB   path to the writable clone DuckDB (the ONLY db it knows)
+  ANNULUS_SANDBOX_OUT  directory to write artifacts (plots) into
 
 It disables network access, pre-binds a few conveniences (``con``, ``pd``,
 ``plt``, ``np``), runs the user's script, and saves any open matplotlib figures.
@@ -23,7 +23,7 @@ def _disable_network() -> None:
     e.g. ``ssl``, still import) and block the actual network actions."""
     import socket
 
-    msg = "network access is disabled inside the Locus sandbox"
+    msg = "network access is disabled inside the Annulus sandbox"
     _RealSocket = socket.socket
 
     class _NoNetSocket(_RealSocket):
@@ -45,8 +45,8 @@ def _disable_network() -> None:
 
 def main() -> int:
     _disable_network()
-    db_path = os.environ["LOCUS_SANDBOX_DB"]
-    out_dir = os.environ["LOCUS_SANDBOX_OUT"]
+    db_path = os.environ["ANNULUS_SANDBOX_DB"]
+    out_dir = os.environ["ANNULUS_SANDBOX_OUT"]
     user_script = sys.argv[1]
 
     ns: dict = {"__name__": "__main__", "db_path": db_path, "output_dir": out_dir}

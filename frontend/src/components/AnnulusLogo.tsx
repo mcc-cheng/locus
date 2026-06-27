@@ -1,7 +1,7 @@
 import { useId } from "react";
 
 /**
- * The Locus mark: a 4×4 data grid where the active violet dots trace an "L"
+ * The Annulus mark: a 4×4 data grid where the active violet dots trace an "L"
  * (left column + bottom row) with a glow on the corner. Recreated as crisp
  * vector from the original concept, with a violet gradient and soft glow.
  */
@@ -9,16 +9,16 @@ const CENTERS = [12, 24, 36, 48];
 const isActive = (cx: number, cy: number) => cx === 12 || cy === 48; // the "L"
 const isCorner = (cx: number, cy: number) => cx === 12 && cy === 48;
 
-export function LocusLogo({ className = "h-8 w-8" }: { className?: string }) {
+export function AnnulusLogo({ className = "h-8 w-8" }: { className?: string }) {
   const uid = useId().replace(/:/g, "");
-  const grad = `locus-grad-${uid}`;
-  const glow = `locus-glow-${uid}`;
+  const grad = `annulus-grad-${uid}`;
+  const glow = `annulus-glow-${uid}`;
   return (
     <svg
       viewBox="0 0 60 60"
       className={className}
       role="img"
-      aria-label="Locus"
+      aria-label="Annulus"
       xmlns="http://www.w3.org/2000/svg"
     >
       <defs>

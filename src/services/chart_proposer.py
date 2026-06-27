@@ -89,7 +89,7 @@ _SYSTEM = (
 
 class OllamaChartProposer:
     """A :class:`ChartProposer` backed by a local Ollama instance, on the same
-    model the analyst uses (``LOCUS_AGENT_MODEL`` or auto-pick)."""
+    model the analyst uses (``ANNULUS_AGENT_MODEL`` or auto-pick)."""
 
     def __init__(self, *, model: str | None = None, client=None, num_retries: int = 2) -> None:
         # Import lazily so importing this module never requires ollama.

@@ -74,7 +74,7 @@ export function Home() {
         <EmptyState
           icon={<UploadIcon className="h-10 w-10" />}
           title="No datasets yet"
-          body="Upload your first CSV — Locus stores it verbatim and builds a queryable schema without changing any of your data."
+          body="Upload your first CSV — Annulus stores it verbatim and builds a queryable schema without changing any of your data."
           action={<Button onClick={() => setTab("upload")}>Upload a CSV</Button>}
         />
       ) : (

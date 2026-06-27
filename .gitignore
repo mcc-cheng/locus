@@ -11,7 +11,7 @@ htmlcov/
 .venv/
 venv/
 
-# Locus runtime data (warehouses, source copies, clones, sandboxes)
+# Annulus runtime data (warehouses, source copies, clones, sandboxes)
 /data/
 *.duckdb
 *.duckdb.wal

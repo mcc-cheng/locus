@@ -1,4 +1,4 @@
-"""The Locus warehouse: an on-disk DuckDB database aggregating isolated dataset
+"""The Annulus warehouse: an on-disk DuckDB database aggregating isolated dataset
 sections, with a sealed, non-destructive landing path.
 
 Phase 1.1 scope: schema isolation + verbatim raw landing + the seal gate. The
@@ -59,7 +59,7 @@ class Staging:
 
 
 class Warehouse:
-    """A read-write handle to a Locus warehouse directory."""
+    """A read-write handle to a Annulus warehouse directory."""
 
     def __init__(self, root: Path, con: duckdb.DuckDBPyConnection) -> None:
         self.root = root

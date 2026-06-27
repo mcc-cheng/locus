@@ -9,7 +9,7 @@ export default defineConfig({
     // During dev, proxy API calls to the Python sidecar.
     proxy: {
       "/api": {
-        target: process.env.LOCUS_API ?? "http://localhost:8000",
+        target: process.env.ANNULUS_API ?? "http://localhost:8000",
         changeOrigin: true,
         rewrite: (p) => p.replace(/^\/api/, ""),
       },

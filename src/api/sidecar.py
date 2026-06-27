@@ -1,9 +1,9 @@
-"""The Locus sidecar entrypoint (Phase 7.2).
+"""The Annulus sidecar entrypoint (Phase 7.2).
 
 This is what PyInstaller freezes and what the Tauri shell launches. It:
   1. resolves a per-user data directory (the warehouse lives here),
-  2. picks a free TCP port (or honours ``LOCUS_PORT``),
-  3. writes the chosen port to ``LOCUS_PORT_FILE`` so the shell can find it,
+  2. picks a free TCP port (or honours ``ANNULUS_PORT``),
+  3. writes the chosen port to ``ANNULUS_PORT_FILE`` so the shell can find it,
   4. serves the FastAPI app on 127.0.0.1 only (never exposed to the network).
 
 Run frozen as the bundled binary, or in dev as ``python -m api.sidecar``.
@@ -21,14 +21,14 @@ from api.rest import create_app
 
 def default_data_dir() -> Path:
     """Per-user data directory for the warehouse."""
-    if env := os.environ.get("LOCUS_DATA"):
+    if env := os.environ.get("ANNULUS_DATA"):
         return Path(env)
     home = Path.home()
     if sys.platform == "darwin":
-        return home / "Library" / "Application Support" / "Locus"
+        return home / "Library" / "Application Support" / "Annulus"
     if sys.platform.startswith("win"):
-        return Path(os.environ.get("APPDATA", home)) / "Locus"
-    return Path(os.environ.get("XDG_DATA_HOME", home / ".local" / "share")) / "Locus"
+        return Path(os.environ.get("APPDATA", home)) / "Annulus"
+    return Path(os.environ.get("XDG_DATA_HOME", home / ".local" / "share")) / "Annulus"
 
 
 def _free_port() -> int:
@@ -41,11 +41,11 @@ def _free_port() -> int:
 
 
 def resolve_port() -> int:
-    env = os.environ.get("LOCUS_PORT")
+    env = os.environ.get("ANNULUS_PORT")
     if env and env.isdigit() and int(env) > 0:
         return int(env)
     # Packaged app: pick a free port and report it via the file the shell reads.
-    if os.environ.get("LOCUS_PORT_FILE"):
+    if os.environ.get("ANNULUS_PORT_FILE"):
         return _free_port()
     # Dev default: 8000 — the port the Vite dev proxy targets, so
     # `python -m api.sidecar` + `npm run dev` just work together.
@@ -66,12 +66,12 @@ def run(
     port = port or resolve_port()
     app = create_app(data_dir)
 
-    pf = port_file or os.environ.get("LOCUS_PORT_FILE")
+    pf = port_file or os.environ.get("ANNULUS_PORT_FILE")
     if pf:
         Path(pf).write_text(str(port), encoding="utf-8")
 
     print(
-        f"Locus engine running at http://{host}:{port}  (data dir: {data_dir})\n"
+        f"Annulus engine running at http://{host}:{port}  (data dir: {data_dir})\n"
         f"  • health:   http://{host}:{port}/health\n"
         f"  • API docs: http://{host}:{port}/docs\n"
         "Leave this running and start the UI in another terminal "
@@ -107,7 +107,7 @@ def _dispatch_sandbox(argv: list[str]) -> int:
         pm.execute_notebook(
             argv[1],
             argv[2],
-            parameters={"db_path": os.environ["LOCUS_SANDBOX_DB"]},
+            parameters={"db_path": os.environ["ANNULUS_SANDBOX_DB"]},
             progress_bar=False,
         )
         return 0

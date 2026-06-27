@@ -1,6 +1,6 @@
 # Building the macOS app
 
-Locus ships as a double-click macOS app: a Tauri shell wrapping a frozen Python
+Annulus ships as a double-click macOS app: a Tauri shell wrapping a frozen Python
 sidecar (PyInstaller) and the built React frontend.
 
 ## Prerequisites
@@ -59,6 +59,6 @@ Either:
 The Tauri shell shows a splash window, spawns the sidecar (which picks a free
 port, writes it to `sidecar.port` in the app data dir, and serves on
 `127.0.0.1`), polls `GET /health` for up to 15 seconds, then opens the main
-window with the sidecar URL injected as `window.__LOCUS_API__`. On failure the
+window with the sidecar URL injected as `window.__ANNULUS_API__`. On failure the
 splash shows the sidecar log and a **Retry** button. The sidecar is terminated
 when the main window closes.

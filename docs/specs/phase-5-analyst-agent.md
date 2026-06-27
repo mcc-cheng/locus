@@ -13,10 +13,10 @@ itself has no write path.
 
 Each turn runs a short ReAct loop on a local Ollama model. The brain
 **auto-selects the smartest installed model** (preferring `qwen3:30b-a3b`, then
-smaller Qwen3, then Qwen2.5; override with `LOCUS_AGENT_MODEL`). On a reasoning
+smaller Qwen3, then Qwen2.5; override with `ANNULUS_AGENT_MODEL`). On a reasoning
 model it **thinks before the answer phase** (kept in a separate channel so the
 answer stays clean); tool-decision steps always run non-thinking for fast,
-schema-valid JSON. `LOCUS_AGENT_THINK=0` forces non-thinking everywhere.
+schema-valid JSON. `ANNULUS_AGENT_THINK=0` forces non-thinking everywhere.
 
 1. Build a **rich data context** — every dataset's tables, columns, row counts,
    and a few sample rows of `raw` — so the model "sees" the data.

@@ -10,15 +10,15 @@ matplotlib figure generation, and sklearn/scipy stats.
 
 `src/lib.rs` shows a **splash window**, spawns the frozen sidecar, and polls
 `GET /health` for up to **15 seconds**. On success it opens the main window with
-the sidecar URL injected as `window.__LOCUS_API__` (the frontend reads this in
+the sidecar URL injected as `window.__ANNULUS_API__` (the frontend reads this in
 `main.tsx`); on failure the splash shows the sidecar log and a **Retry** button
 (`retry` command). The sidecar is killed when the main window closes. Sidecar
 stdout/stderr are redirected to `sidecar.log` in the app data dir.
 
-## 7.2 PyInstaller sidecar (`packaging/locus_sidecar.spec`, `src/api/sidecar.py`)
+## 7.2 PyInstaller sidecar (`packaging/annulus_sidecar.spec`, `src/api/sidecar.py`)
 
-The sidecar resolves a per-user data dir, picks a free port (or `LOCUS_PORT`),
-writes it to `LOCUS_PORT_FILE`, and serves `create_app` on `127.0.0.1` only.
+The sidecar resolves a per-user data dir, picks a free port (or `ANNULUS_PORT`),
+writes it to `ANNULUS_PORT_FILE`, and serves `create_app` on `127.0.0.1` only.
 **Verified end-to-end** (`tests/api/test_sidecar.py`): spawned as a subprocess it
 writes the port and answers `/health`.
 
@@ -34,7 +34,7 @@ optional bio (`rdkit`) and experiment (`scikit-learn`, `pandas`, `matplotlib`,
 
 ## 7.3 Build pipeline (`packaging/macos/`)
 
-`make dist` runs PyInstaller (→ `packaging/build/locus-sidecar/`) then
+`make dist` runs PyInstaller (→ `packaging/build/annulus-sidecar/`) then
 `cargo tauri build --target aarch64-apple-darwin`, producing:
 
 ```
@@ -49,7 +49,7 @@ Gatekeeper bypass (`xattr -cr` or right-click → Open).
 
 - ✅ Sidecar serving + port file + `/health` (real subprocess test).
 - ✅ Frozen-dispatch routing for sandbox scripts (real subprocess test).
-- ✅ Frontend reads `window.__LOCUS_API__` and still builds.
+- ✅ Frontend reads `window.__ANNULUS_API__` and still builds.
 - ⚠️ The Rust shell, PyInstaller freeze, and `.app/.dmg` bundling are authored
   per Tauri v2 / PyInstaller conventions but require the native toolchain
   (`cargo tauri`, PyInstaller, app icons) to build — not exercised here.

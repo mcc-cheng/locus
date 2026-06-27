@@ -17,7 +17,7 @@ import {
   UploadIcon,
 } from "./components/icons";
 import { StatusBar } from "./components/StatusBar";
-import { LocusLogo } from "./components/LocusLogo";
+import { AnnulusLogo } from "./components/AnnulusLogo";
 import { ChatHistory } from "./agent/ChatHistory";
 
 const TABS: { id: Tab; label: string; Icon: ComponentType<{ className?: string }> }[] = [
@@ -40,12 +40,12 @@ export function App() {
         }`}
       >
         <div className={`flex items-center py-5 ${navCollapsed ? "justify-center px-0" : "gap-2.5 px-5"}`}>
-          <LocusLogo className="h-8 w-8 shrink-0 rounded-lg shadow-sm" />
+          <AnnulusLogo className="h-8 w-8 shrink-0 rounded-lg shadow-sm" />
           {!navCollapsed && (
             <>
               <div className="flex-1">
-                <div className="text-[15px] font-semibold leading-tight text-slate-900">Locus</div>
-                <div className="text-[11px] leading-tight text-slate-400">Data Aggregator</div>
+                <div className="text-[15px] font-semibold leading-tight text-slate-900">Annulus AI</div>
+                <div className="text-[11px] leading-tight text-slate-400">Local data analyst</div>
               </div>
               <button
                 onClick={() => setNavCollapsed(true)}

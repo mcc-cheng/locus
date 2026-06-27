@@ -1,6 +1,6 @@
 """Biopack transforms — strictly opt-in (Phase 2.3).
 
-By default Locus is pure pass-through: values are stored verbatim and biopack is
+By default Annulus is pure pass-through: values are stored verbatim and biopack is
 NEVER applied. A user must explicitly enable a transform per-column, per-upload.
 When enabled, the original value is preserved verbatim under ``<col>_raw`` and
 the normalized/parsed result is added alongside as a derived column. The five QC
@@ -112,7 +112,7 @@ _UNAVAILABLE_MSG = {
     "rdkit": (
         "The 'smiles' transform needs RDKit, which is not installed.\n"
         "Install the optional biomedical extra:\n"
-        "  pip install 'locus[bio]'\n"
+        "  pip install 'annulus[bio]'\n"
         "Or disable biopack for this upload (values stay verbatim)."
     )
 }

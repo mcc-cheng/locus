@@ -1,4 +1,4 @@
-"""Locus analyst agent: a multi-step, tool-using LLM over the warehouse."""
+"""Annulus analyst agent: a multi-step, tool-using LLM over the warehouse."""
 
 from .analyst import AgentTurn, AnalystAgent
 from .brain import AgentError, Brain, OllamaBrain

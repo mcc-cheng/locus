@@ -24,8 +24,8 @@ def test_exec_script_dispatch_runs_bootstrap(tmp_path):
     env = {
         "PATH": os.environ.get("PATH", ""),
         "PYTHONPATH": str(SRC),
-        "LOCUS_SANDBOX_DB": str(db),
-        "LOCUS_SANDBOX_OUT": str(out_dir),
+        "ANNULUS_SANDBOX_DB": str(db),
+        "ANNULUS_SANDBOX_OUT": str(out_dir),
     }
     proc = subprocess.run(
         [sys.executable, "-m", "api.sidecar", "exec-script", str(script)],

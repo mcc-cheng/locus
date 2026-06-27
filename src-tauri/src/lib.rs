@@ -1,9 +1,9 @@
-// Locus Tauri shell (Phase 7.1).
+// Annulus Tauri shell (Phase 7.1).
 //
 // On launch a splash window is shown while we: spawn the frozen Python sidecar,
 // wait (up to 15s) for it to write its port file and answer GET /health, then
 // open the main window with the resolved API base injected as
-// `window.__LOCUS_API__`. If the sidecar fails to come up, the splash shows the
+// `window.__ANNULUS_API__`. If the sidecar fails to come up, the splash shows the
 // logs and a Retry button. The sidecar is killed when the main window closes.
 
 use std::fs::{self, File};
@@ -20,7 +20,7 @@ const STARTUP_TIMEOUT_SECS: u64 = 15;
 fn sidecar_binary(app: &tauri::AppHandle) -> Result<std::path::PathBuf, String> {
     app.path()
         .resolve(
-            "locus-sidecar/locus-sidecar",
+            "annulus-sidecar/annulus-sidecar",
             tauri::path::BaseDirectory::Resource,
         )
         .map_err(|e| format!("cannot locate bundled sidecar: {e}"))
@@ -39,8 +39,8 @@ fn start_sidecar(app: &tauri::AppHandle) -> Result<String, String> {
 
     let log = File::create(&log_file).map_err(|e| e.to_string())?;
     let child = Command::new(&bin)
-        .env("LOCUS_DATA", &warehouse)
-        .env("LOCUS_PORT_FILE", &port_file)
+        .env("ANNULUS_DATA", &warehouse)
+        .env("ANNULUS_PORT_FILE", &port_file)
         .stdout(Stdio::from(log.try_clone().map_err(|e| e.to_string())?))
         .stderr(Stdio::from(log))
         .spawn()
@@ -55,7 +55,7 @@ fn start_sidecar(app: &tauri::AppHandle) -> Result<String, String> {
         if Instant::now() > deadline {
             let logs = fs::read_to_string(&log_file).unwrap_or_default();
             return Err(format!(
-                "The Locus engine did not start within {STARTUP_TIMEOUT_SECS}s.\n\n{logs}"
+                "The Annulus engine did not start within {STARTUP_TIMEOUT_SECS}s.\n\n{logs}"
             ));
         }
         if let Ok(p) = fs::read_to_string(&port_file) {
@@ -77,7 +77,7 @@ fn start_sidecar(app: &tauri::AppHandle) -> Result<String, String> {
 
 fn open_main(app: &tauri::AppHandle, api_url: &str) -> Result<(), String> {
     let script = format!(
-        "window.__LOCUS_API__ = {};",
+        "window.__ANNULUS_API__ = {};",
         serde_json::to_string(api_url).unwrap()
     );
     WebviewWindowBuilder::new(app, "main", WebviewUrl::App("index.html".into()))
@@ -134,5 +134,5 @@ pub fn run() {
             }
         })
         .run(tauri::generate_context!())
-        .expect("error while running Locus");
+        .expect("error while running Annulus");
 }

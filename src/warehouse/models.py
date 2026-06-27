@@ -1,4 +1,4 @@
-"""Immutable data contracts for the Locus warehouse layer (Phase 1).
+"""Immutable data contracts for the Annulus warehouse layer (Phase 1).
 
 Every object the warehouse hands back to callers is one of these frozen Pydantic
 models. They are the stable contract that the service layer, API, and frontend

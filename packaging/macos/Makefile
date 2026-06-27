@@ -1,4 +1,4 @@
-# Locus macOS build pipeline (verified working).
+# Annulus macOS build pipeline (verified working).
 #
 #   make deps   — install build tooling (PyInstaller, frontend deps + Tauri CLI)
 #   make icons  — generate the app icon set from packaging/macos/icon.png
@@ -25,13 +25,13 @@ icons:
 	cd $(ROOT) && $(TAURI) icon packaging/macos/icon.png
 
 # Freeze the Python sidecar into a self-contained onedir bundle, then stage it
-# where tauri.conf.json expects it (packaging/build/locus-sidecar).
+# where tauri.conf.json expects it (packaging/build/annulus-sidecar).
 sidecar:
-	cd $(ROOT) && $(PY) -m PyInstaller packaging/locus_sidecar.spec --noconfirm \
+	cd $(ROOT) && $(PY) -m PyInstaller packaging/annulus_sidecar.spec --noconfirm \
 		--distpath $(BUILD)/_dist --workpath $(BUILD)/_work
-	rm -rf $(BUILD)/locus-sidecar
-	cp -R $(BUILD)/_dist/locus-sidecar $(BUILD)/locus-sidecar
-	@echo "Sidecar staged at $(BUILD)/locus-sidecar"
+	rm -rf $(BUILD)/annulus-sidecar
+	cp -R $(BUILD)/_dist/annulus-sidecar $(BUILD)/annulus-sidecar
+	@echo "Sidecar staged at $(BUILD)/annulus-sidecar"
 
 # Build the .app (the Tauri CLI builds the frontend via beforeBuildCommand).
 app: sidecar

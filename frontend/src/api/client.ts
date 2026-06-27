@@ -18,7 +18,7 @@ import type {
   WarehouseSummary,
 } from "./types";
 
-let API_BASE = (import.meta.env.VITE_LOCUS_API as string | undefined) ?? "/api";
+let API_BASE = (import.meta.env.VITE_ANNULUS_API as string | undefined) ?? "/api";
 
 /** The Tauri shell calls this once it knows the sidecar's port. */
 export function setApiBase(base: string): void {

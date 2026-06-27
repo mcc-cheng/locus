@@ -1,4 +1,4 @@
-"""Locus REST API."""
+"""Annulus REST API."""
 
 from .app import create_app
 

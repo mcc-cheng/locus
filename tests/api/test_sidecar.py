@@ -14,8 +14,8 @@ def test_sidecar_serves_and_writes_port(tmp_path):
     env = {
         "PATH": __import__("os").environ.get("PATH", ""),
         "PYTHONPATH": str(SRC),
-        "LOCUS_DATA": str(tmp_path / "data"),
-        "LOCUS_PORT_FILE": str(port_file),
+        "ANNULUS_DATA": str(tmp_path / "data"),
+        "ANNULUS_PORT_FILE": str(port_file),
     }
     proc = subprocess.Popen(
         [sys.executable, "-m", "api.sidecar"],

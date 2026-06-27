@@ -1,4 +1,4 @@
-# Locus — Outreach Target Labs
+# Annulus AI — Outreach Target Labs
 
 **Date:** 2026-06-24
 **Institutions:** Stanford · Columbia · University of Utah (~25 labs each)

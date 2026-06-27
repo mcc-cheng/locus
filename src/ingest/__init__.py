@@ -1,4 +1,4 @@
-"""Locus ingestion engines (Phase 2): flat CSV -> verified relational model."""
+"""Annulus ingestion engines (Phase 2): flat CSV -> verified relational model."""
 
 from .agentic import AgenticIngestor, build_contract_from_proposal, build_profile
 from .audit import IngestAudit, read_contract, write_audit, write_contract

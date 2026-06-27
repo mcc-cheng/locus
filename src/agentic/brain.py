@@ -26,7 +26,7 @@ def _normalize(name: str) -> str:
     return name[: -len(":latest")] if name.endswith(":latest") else name
 
 
-# When LOCUS_AGENT_MODEL is unset, auto-pick the best installed model in this
+# When ANNULUS_AGENT_MODEL is unset, auto-pick the best installed model in this
 # order (smartest first). gemma4 reasons well and is fast; Qwen3 30b-a3b is a
 # strong MoE fallback.
 _PREFERRED = [
@@ -36,8 +36,8 @@ _resolved_model: str | None = None
 
 
 def _resolve_model() -> str:
-    """LOCUS_AGENT_MODEL if set, else the best installed model (cached)."""
-    env = os.environ.get("LOCUS_AGENT_MODEL")
+    """ANNULUS_AGENT_MODEL if set, else the best installed model (cached)."""
+    env = os.environ.get("ANNULUS_AGENT_MODEL")
     if env:
         return env
     global _resolved_model
@@ -64,8 +64,8 @@ def _answer_think_setting():
     on a reasoning model (Qwen3) thinking keeps the chain-of-thought in a separate
     channel so the answer is clean — with it OFF, Qwen3 dumps its reasoning into
     the answer text. It's a no-op on non-reasoning models (Qwen2.5). Set
-    LOCUS_AGENT_THINK=0 to force off (faster but answers may be verbose)."""
-    v = os.environ.get("LOCUS_AGENT_THINK")
+    ANNULUS_AGENT_THINK=0 to force off (faster but answers may be verbose)."""
+    v = os.environ.get("ANNULUS_AGENT_THINK")
     if v is None:
         return True
     v = v.strip().lower()

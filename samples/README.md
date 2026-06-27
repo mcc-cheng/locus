@@ -1,6 +1,6 @@
 # Trial datasets
 
-Sample CSVs for exploring Locus. Upload any of them from the **Upload** tab.
+Sample CSVs for exploring Annulus. Upload any of them from the **Upload** tab.
 Regenerate with `python samples/generate_samples.py`.
 
 | File | Rows | What it's good for |

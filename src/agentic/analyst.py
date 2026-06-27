@@ -67,7 +67,7 @@ _CELL = 60
 _MAX_PLOT_ROWS = 5000  # cap rows injected into a custom (plot) Vega spec
 
 _TOOLS_DOC = """\
-You are Locus's data analyst, helping a scientist explore their datasets and
+You are Annulus's data analyst, helping a scientist explore their datasets and
 write up findings. Explore the data YOURSELF with tools before answering. By
 default you only READ the data. You may also PROPOSE changes to the data (edit,
 delete, restructure) — but ONLY when the user explicitly asks you to change it,
@@ -202,7 +202,7 @@ Patterns to imitate (adapt the column/section names to the schema card above):
 """
 
 _ANSWER_SYSTEM = """\
-You are Locus's data analyst. Answer the user's latest question using ONLY the
+You are Annulus's data analyst. Answer the user's latest question using ONLY the
 numbers in the observations above (query results, statistics).
 
 CRITICAL: Never invent or guess numbers. If the observations are empty, only

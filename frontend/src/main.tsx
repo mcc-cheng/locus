@@ -7,7 +7,7 @@ import { setApiBase } from "./api/client";
 import "./index.css";
 
 // In the Tauri desktop app, the Rust shell injects the sidecar's URL.
-const injected = (window as unknown as { __LOCUS_API__?: string }).__LOCUS_API__;
+const injected = (window as unknown as { __ANNULUS_API__?: string }).__ANNULUS_API__;
 if (injected) setApiBase(injected);
 
 createRoot(document.getElementById("root")!).render(

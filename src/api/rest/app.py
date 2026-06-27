@@ -1,4 +1,4 @@
-"""Locus REST API (Phase 3.4).
+"""Annulus REST API (Phase 3.4).
 
 FastAPI app exposing the service layer. Every endpoint returns a consistent
 ``{ok, data, error}`` envelope. No business logic lives here — endpoints validate
@@ -156,8 +156,8 @@ def create_app(root: str | Path, *, brain_factory=None) -> FastAPI:
         yield
         state.sandboxes.destroy_all()  # session end: discard all sandboxes
 
-    app = FastAPI(title="Locus API", version="0.1.0", lifespan=lifespan)
-    app.state.locus = state
+    app = FastAPI(title="Annulus API", version="0.1.0", lifespan=lifespan)
+    app.state.annulus = state
 
     # Local desktop tool bound to 127.0.0.1; allow the dev frontend (and the
     # Tauri webview) to call it directly without cross-origin failures.

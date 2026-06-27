@@ -1,20 +1,20 @@
 #!/usr/bin/env bash
-# Run Locus locally for development: backend (port 8000) + frontend (port 5173).
+# Run Annulus locally for development: backend (port 8000) + frontend (port 5173).
 # Usage:  ./dev.sh    then open http://localhost:5173 . Ctrl-C stops both.
 set -euo pipefail
 cd "$(dirname "$0")"
 
 PORT=8000
-DATA="${LOCUS_DATA:-./data}"
-# Which local Ollama model the analyst uses (override: LOCUS_AGENT_MODEL=… ./dev.sh).
-export LOCUS_AGENT_MODEL="${LOCUS_AGENT_MODEL:-gemma4}"
-echo "▶ analyst model: $LOCUS_AGENT_MODEL"
+DATA="${ANNULUS_DATA:-./data}"
+# Which local Ollama model the analyst uses (override: ANNULUS_AGENT_MODEL=… ./dev.sh).
+export ANNULUS_AGENT_MODEL="${ANNULUS_AGENT_MODEL:-gemma4}"
+echo "▶ analyst model: $ANNULUS_AGENT_MODEL"
 
 # Free the port if a previous run is lingering.
 lsof -ti tcp:$PORT 2>/dev/null | xargs kill 2>/dev/null || true
 
-echo "▶ starting Locus engine on http://127.0.0.1:$PORT  (data: $DATA)"
-LOCUS_PORT=$PORT LOCUS_DATA="$DATA" .venv/bin/python -m api.sidecar &
+echo "▶ starting Annulus engine on http://127.0.0.1:$PORT  (data: $DATA)"
+ANNULUS_PORT=$PORT ANNULUS_DATA="$DATA" .venv/bin/python -m api.sidecar &
 BACKEND=$!
 
 cleanup() { echo; echo "stopping…"; kill "$BACKEND" 2>/dev/null || true; }

@@ -1,16 +1,16 @@
 # -*- mode: python ; coding: utf-8 -*-
-"""PyInstaller spec for the Locus sidecar (Phase 7.2).
+"""PyInstaller spec for the Annulus sidecar (Phase 7.2).
 
 Freezes src/api/sidecar.py into a self-contained directory bundle that includes
-the Python runtime, all Locus packages, DuckDB, FastAPI/uvicorn, and the optional
+the Python runtime, all Annulus packages, DuckDB, FastAPI/uvicorn, and the optional
 biomedical + experiment stacks (rdkit, scikit-learn, pandas, matplotlib,
 papermill, ipykernel). The frozen binary self-dispatches sandbox execution
 (see api/sidecar.py), so sys.executable can run scripts/notebooks even when it is
 the app binary rather than a Python interpreter.
 
 Build (from repo root):
-    pyinstaller packaging/locus_sidecar.spec --noconfirm
-Output: dist/locus-sidecar/  (a onedir bundle; binary: dist/locus-sidecar/locus-sidecar)
+    pyinstaller packaging/annulus_sidecar.spec --noconfirm
+Output: dist/annulus-sidecar/  (a onedir bundle; binary: dist/annulus-sidecar/annulus-sidecar)
 """
 
 import os
@@ -90,7 +90,7 @@ exe = EXE(
     a.scripts,
     [],
     exclude_binaries=True,
-    name="locus-sidecar",
+    name="annulus-sidecar",
     console=True,
     disable_windowed_traceback=False,
     target_arch="arm64",
@@ -102,5 +102,5 @@ coll = COLLECT(
     a.datas,
     strip=False,
     upx=False,
-    name="locus-sidecar",
+    name="annulus-sidecar",
 )

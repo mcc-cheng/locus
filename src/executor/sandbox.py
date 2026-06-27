@@ -43,7 +43,7 @@ class SandboxManager:
         self.root = Path(root)
         # Sandboxes live OUTSIDE the warehouse root so user code can't traverse to
         # the canonical. Default to a dedicated dir under the system temp area.
-        self.base_dir = Path(base_dir) if base_dir else Path(tempfile.gettempdir()) / "locus-sandboxes"
+        self.base_dir = Path(base_dir) if base_dir else Path(tempfile.gettempdir()) / "annulus-sandboxes"
         self.base_dir.mkdir(parents=True, exist_ok=True)
         self._active: dict[str, SandboxHandle] = {}
 

@@ -1,4 +1,4 @@
-"""Locus warehouse layer (Phase 1): isolated, non-destructive CSV storage."""
+"""Annulus warehouse layer (Phase 1): isolated, non-destructive CSV storage."""
 
 from .csv_source import CsvReadOptions
 from .errors import (

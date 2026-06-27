@@ -41,7 +41,7 @@ Four new server-side builders in `visualization_service.py`:
   col, value, aggregate, title, rationale`) and `ChartProposalSet`. A
   `ChartProposer` Protocol; `OllamaChartProposer` implements it (structured JSON
   output, retries, `format=schema`). Model resolved via the existing
-  `LOCUS_AGENT_MODEL`/auto-pick logic (shared with the analyst).
+  `ANNULUS_AGENT_MODEL`/auto-pick logic (shared with the analyst).
 - **`services/visualization_service.py`** — add the 4 builders; add
   `_model_profile()` (column stats + sample values for the prompt, built from
   `QueryService`); add `generate_suggestions(proposer)` → validated
